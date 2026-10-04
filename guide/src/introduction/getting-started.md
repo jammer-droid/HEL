@@ -66,16 +66,16 @@ git clone https://github.com/jammer-droid/HEL.git
 | `h02` *(예정)* | H1 완성 상태 |
 | `hXX` | H(XX-1) 완성 상태 |
 
-Lab을 시작할 때는 해당 tag에서 branch를 만든다.
+Lab을 시작할 때는 해당 tag에서 branch를 만든다. 예를 들어 H1은 `h01`에서 시작한다.
 
 ```bash
-git checkout -b my-h04 h04
+git checkout -b my-h01 h01
 ```
 
-한 Lab에서 무엇이 바뀌었는지는 다음 tag와 비교해 본다.
+한 Lab에서 무엇이 바뀌었는지는 다음 tag와 비교해 본다. 예를 들어 H0에서 바뀐 것은 이렇게 본다.
 
 ```bash
-git diff h04..h05
+git diff h00..h01
 ```
 
 tag는 각 Lab이 끝날 때 만든다.

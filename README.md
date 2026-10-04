@@ -36,8 +36,10 @@ harness 구현은 바이브 코딩으로 진행한다. 코드를 작성하는 �
 git clone https://github.com/jammer-droid/HEL.git
 ```
 
+Lab을 시작할 때는 그 Lab의 시작 tag에서 branch를 만든다. 예를 들어 H1은 `h01`에서 시작한다.
+
 ```bash
-git checkout -b my-h00 h00
+git checkout -b my-h01 h01
 ```
 
 ## 준비
@@ -73,19 +75,27 @@ cargo install --path crates/hel --target-dir target
 ## hel 사용
 
 ```bash
+hel
+```
+
+옵션 없이 실행하면 대화형으로 실행된다. 한 줄씩 입력하면 앞의 대화와 함께 model에게 보내고, `/exit`나 Ctrl-D로 끝낸다. tool 호출은 `[tool]` 줄로 표시된다.
+
+```bash
 hel --instruction "Read the file hello.txt and print its contents exactly as they are."
 ```
+
+`--instruction`을 주면 지시 하나를 실행하고 끝난다.
 
 - 실행한 폴더를 작업 디렉터리로 쓴다. `read_file` tool은 이 폴더 안의 파일만 읽는다.
 - 출력과 오류 메시지는 영어다.
 
 | 옵션 | 필수 | 설명 |
 | --- | --- | --- |
-| `--instruction "<text>"` | 예 | model에게 보낼 지시 |
-| `--context <file>` | 아니요 | 실행 정보 파일(JSON). run ID, Lab, task, 조건, model, budget(최대 turn 수, timeout, 출력 token 한도)을 담는다. 없으면 기본값으로 실행한다 |
+| `--instruction "<text>"` | 아니요 | model에게 보낼 지시. 없으면 대화형으로 실행한다 |
+| `--context <file>` | 아니요 | 실행 정보 파일(JSON). run ID, Lab, task, 조건, model, budget(최대 turn 수, timeout, 출력 token 한도)을 담는다. 없으면 기본값으로 실행한다. `--instruction`과 함께 써야 한다 |
 | `--record <file>` | 아니요 | 실행 기록(record)을 쓸 경로. 같은 폴더의 `raw/requests.jsonl`에 model 요청과 응답 원본도 남긴다(`Authorization` header 제외). `--context`와 함께 써야 한다 |
 
-직접 실행할 때는 `--instruction`만 쓰면 된다. 답만 출력하고 기록은 남기지 않는다.
+직접 실행할 때는 대화형이나 `--instruction`만 쓰면 된다. 답만 출력하고 기록은 남기지 않는다.
 
 `--context`와 `--record`는 `evals`가 쓰는 옵션이다. `evals try`나 `evals run`은 run마다 이렇게 `hel`을 실행한다.
 
@@ -96,8 +106,6 @@ hel --instruction "Read the file hello.txt and print its contents exactly as the
 5. `hel`이 쓴 `record.json`을 읽어 채점한다.
 
 기록 형식은 `evals/schema/record.md`, 실행 규약은 `evals/harnesses/hel/PROFILE.md`에 있다.
-
-H0의 `hel`은 지시 하나를 받아 실행하고 끝나는 형태다. 대화형 실행은 H1 전에 따로 만든다.
 
 ## evals 사용
 

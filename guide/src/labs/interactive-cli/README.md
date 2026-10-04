@@ -120,11 +120,15 @@ fn chat(
 
 답은 stdout, tool 호출과 오류는 stderr로 나눈다. H0의 단발 실행과 같은 규칙이다. 오류가 나도 프로그램을 끝내지 않고 다음 입력을 받는다.
 
-## 써 보기
+## 실행 결과
+
+저장소 루트에서 실행했다. 작업 디렉터리가 저장소 루트이므로 `read_file`은 저장소 안의 파일을 읽을 수 있다. (아래 기록의 저장소 경로는 `/path/to/HEL`로 바꿔 적었다.)
 
 ```bash
 cargo run -q -p hel
 ```
+
+### 1. tool 없이 답하기
 
 ```text
 hel — type /exit or press Ctrl-D to quit
@@ -151,19 +155,62 @@ If you have a file in the working directory you'd like me to read or look over, 
 - 명령어 실행
 
 그래서 파일 이름을 정확히 알려주시면 제가 내용을 읽어서 요약, 번역, 분석, 코드 리뷰 등을 도와드릴 수 있습니다. 어떤 파일을 열어볼까요?
->
 ```
 
-- 세 입력 모두 tool을 호출하지 않고 답했다. 그래서 `[tool]` 줄이 없다.
+- 세 입력 모두 tool을 호출하지 않았다.
 - `hel`은 system prompt를 보내지 않는다. 그런데 "hi"에 대한 첫 답부터 파일 경로를 묻는다. model이 받은 것은 대화와 tool 정의뿐이고, 그것만 보고 자기 역할을 파일을 읽어 주는 쪽으로 잡았다.
 - 도구 설명은 `read_file` 정의의 `description`("Read a UTF-8 text file in the working directory and return its full contents.")과 `path` 설명을 거의 그대로 옮겼다. "할 수 없는 것" 목록은 정의에 없는 내용이다. 다른 tool이 없다는 데서 model이 추론했다.
-- 대화를 기억하는지는 이 기록으로 알 수 없다. 앞 대화를 참조하는 입력이 없었다.
+
+### 2. 파일 읽기
+
+````text
+> /path/to/HEL/evals/tasks/read-echo-01/fixture/hello.txt 내용 읽고 알려줘
+[tool] read_file {"path":"/path/to/HEL/evals/tasks/read-echo-01/fixture/hello.txt"}
+[tool] read_file {"path":"hello.txt"} (failed)
+읽었습니다. ✅
+
+**파일:** `/path/to/HEL/evals/tasks/read-echo-01/fixture/hello.txt`
+
+**내용:**
+```
+Hello, harness!
+```
+
+한 줄짜리 텍스트 파일이고, 내용은 `Hello, harness!` 입니다. (참고로 `hello.txt` 같은 짧은 상대 경로로는 찾지 못했고, 알려주신 전체 경로로는 정상적으로 읽혔습니다.)
+````
+
+- tool 정의는 상대 경로를 요구하지만 model은 받은 절대 경로를 그대로 넘겼다. 그래도 읽혔다. `read_file`은 작업 디렉터리에 경로를 이어 붙인 뒤 실제 경로로 바꿔서 작업 디렉터리 안인지 확인한다. 절대 경로를 이어 붙이면 절대 경로가 그대로 남고, 이 파일은 저장소 안에 있어서 통과했다. 저장소 밖의 절대 경로였다면 거부된다.
+- 첫 호출로 이미 내용을 읽었는데 `hello.txt`로 한 번 더 시도했다. 이 호출은 작업 디렉터리(저장소 루트)에 `hello.txt`가 없어 실패했다. model은 실패도 답에 덧붙여 알렸다.
+- `[tool]` 줄은 답보다 먼저 나오지만, 실제로는 입력 하나가 끝난 뒤 한꺼번에 tool이 호출된 순서대로 출력된 것이다.
+
+### 3. 앞 대화에 이어서 읽기
+
+```text
+>  README.md 내용도 확인
+[tool] read_file {"path":"README.md"}
+[tool] read_file {"path":"/path/to/HEL/README.md"}
+[tool] read_file {"path":"/path/to/HEL/evals/tasks/read-echo-01/README.md"} (failed)
+[tool] read_file {"path":"/path/to/HEL/evals/tasks/read-echo-01/fixture/README.md"} (failed)
+`README.md`를 찾았습니다. (작업 디렉터리가 저장소 루트라 `README.md` 상대 경로로도 읽혔고, `evals/tasks/...` 하위에는 없었습니다.)
+
+**파일:** `/path/to/HEL/README.md` — 저장소 루트의 README
+
+## 요약
+(중략: 구성, Lab 진행, 준비물, 설치, hel·evals 사용법 요약)
+
+즉, 이 저장소는 **"read_file tool 하나만 있는 최소 harness를 만들고 → task(`read-echo-01` 등)로 측정하고 → 결과를 기록"** 하는 구조입니다. 앞서 읽은 `hello.txt`(`Hello, harness!`)는 바로 `read-echo-01` task의 fixture 입력 파일이네요.
+```
+
+- "README.md"만 말했는데 model은 앞 입력에서 다룬 `read-echo-01` 폴더의 README까지 찾아보았다. 마지막 문장도 앞에서 읽은 `hello.txt`와 이어서 설명한다. 대화 기록이 다음 입력에 함께 간다는 것이 이 두 곳에서 보인다.
+- 입력 하나에 tool 호출이 4번 일어났다. 같은 파일을 상대 경로와 절대 경로로 두 번 읽었고, 없는 경로 두 개를 추측해서 시도했다. 파일 목록을 보는 tool이 없어서 model은 경로를 추측할 수밖에 없다.
+- README 전체가 tool 결과로 `messages`에 들어갔다. 같은 내용이 두 번 들어갔고, 이후 입력마다 다시 보내진다.
 
 ## 돌아보기
 
 - 대화가 길어질수록 매 호출에 보내는 `messages`가 커진다. 입력 token과 비용이 대화 길이에 따라 늘어나고, 현재 줄이는 장치는 없다.
 - 입력 하나에서 `max_turns`를 다 쓰거나 API 오류가 나면, 대화 기록이 tool 결과나 user message로 끝난 상태에서 다음 입력이 붙는다. 이러한 오류와 예외는 실험을 진행하며 하나씩 고쳐 나간다.
 - 대화형 실행은 record를 남기지 않아 테스트에는 `evals`를 그대로 사용한다.
+- harness는 model의 tool 호출을 그대로 실행한다. 같은 파일을 다시 읽거나 경로를 추측해 여러 번 시도해도 막지 않고, 그만큼 model 호출과 token을 쓴다. 파일 목록을 보는 tool이 없는 것도 추측을 늘린다. H1에서는 전용 tool 대신 bash 하나를 주고 어디까지 되는지 본다.
 
 ### 다른 harness와 비교하면
 
