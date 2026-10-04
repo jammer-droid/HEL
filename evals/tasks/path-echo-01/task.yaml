@@ -1,0 +1,11 @@
+id: path-echo-01
+eval_version: eval-v1
+description: 경로를 알려 준 여러 줄 ASCII 파일을 읽고 그대로 출력한다 (H1)
+instruction: >
+  Read the file memo.txt and print its contents exactly as they are.
+  Do not add anything else.
+fixture: fixture/
+checks:
+  - id: output-exact
+    type: output_exact_match
+    expected_file: fixture/memo.txt

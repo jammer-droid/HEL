@@ -224,7 +224,7 @@ reasoning/effort 수준, 허용한 tool 목록, system prompt 수정 여부를 L
 
 | 명령 | 하는 일 | API 호출 | 결과 위치 |
 | --- | --- | --- | --- |
-| `evals try <task> [--lab] [--harness] [--instruction] [--fixture] [--build]` | task 하나를 1회 실행하고 입력, tool 호출, 출력, check, usage를 터미널에 보여준다 | 1회 | `results/try/` |
+| `evals try <task> [--lab] [--harness \| --condition] [--instruction] [--fixture] [--build]` | task 하나를 1회 실행하고 입력, tool 호출, 출력, check, usage를 터미널에 보여준다 | 1회 | `results/try/` |
 | `evals run [lab] [--conditions a,b] [--force] [--build]` | condition × task × repetition 실행 후 판정, report | 있음 | `results/<lab>/<run-id>/`, `report.md` |
 | `evals report [lab]` | 이미 있는 run을 다시 형식 검사, 판정하고 report를 쓴다 | 없음 | `report.md`, run별 `verdict.json` |
 
@@ -233,6 +233,7 @@ reasoning/effort 수준, 허용한 tool 목록, system prompt 수정 여부를 L
 - harness는 `hel`. PATH에 설치된 `hel`이 있으면 그것을 쓰고, 없으면 `crates/hel`을 빌드해 쓴다(`run`도 같다). `--build`는 설치 여부와 관계없이 작업 폴더 코드를 빌드해 쓴다. 설치된 `hel`이 `crates/hel`·`crates/record` 소스보다 오래되었으면 경고하고, 기록되는 `harness.version`에 `-stale`을 붙인다.
 - model과 budget은 Lab 정의(기본: 최신 Lab)에서 가져온다. task가 그 Lab의 test set에 없어도 된다.
 - `--harness claude-code`이면 Lab 정의의 같은 harness 조건 설정을 쓴다.
+- `--condition <name>`이면 Lab 정의에서 그 이름의 조건(harness와 settings)을 그대로 쓴다. 예: `evals try find-echo-01 --condition variant-bash`.
 - `--instruction`, `--fixture`로 입력을 바꾸면 run에 `overridden`이 기록되고 판정은 참고용으로 표시한다.
 
 `run`의 실행 순서:
@@ -257,3 +258,4 @@ reasoning/effort 수준, 허용한 tool 목록, system prompt 수정 여부를 L
 | eval version | 내용 |
 | --- | --- |
 | eval-v0 | H0. task `read-echo-01`. check `output_exact_match`, `tool_calls`. record-v0, verdict-v0 |
+| eval-v1 | H1. task `path-echo-01`, `find-echo-01` 추가. 조건 이름 `variant-<name>` 허용(record-v0 호환 확장), hel 조건의 `settings.tools` → `--tools`, `evals try --condition`, report에 tool 호출 수와 run별 tool 호출 |

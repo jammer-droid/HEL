@@ -32,7 +32,7 @@ collector가 run 하나마다 만드는 `results/<lab>/<run-id>/record.json`의 
 | `run.experiment_id` | string | v0 | Lab 정의의 Lab ID. `revision`이 2 이상이면 `<lab>-r<N>` |
 | `run.lab` | string | v0 | `hXX` |
 | `run.task_id` | string | v0 | `evals/tasks/<task-id>` |
-| `run.condition` | string | v0 | `baseline` / `variant` / `external-<harness>` |
+| `run.condition` | string | v0 | `baseline` / `variant` / `variant-<name>` / `external-<harness>`. `variant-<name>`은 한 Lab에서 같은 코드로 여러 설정을 비교할 때 쓴다(H1: tool 구성 비교) |
 | `run.repetition` | integer ≥ 1 | v0 | 같은 (condition, task) 안에서의 반복 번호 |
 | `run.started_at`, `run.ended_at` | date-time | v0 | 실행 시작/종료 시각. model 변경 추적과 peak/off-peak 구분에 사용 |
 

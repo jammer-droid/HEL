@@ -1,0 +1,38 @@
+# Lab 정의. evals try / run / report가 Lab ID(h01)로 이 파일을 찾는다.
+lab: h01
+title: Tool Loop
+description: >
+  Compare a hel that has only read_file with a hel that has only bash and a hel that has
+  both, on reading a file at a known path and on finding a file whose path is not given.
+
+model:                     # H0와 같게 유지한다
+  provider: deepseek
+  id: deepseek-flash
+  params: {}               # thinking은 provider 기본값(켜짐)
+
+budget:                    # H0와 같게 유지한다
+  max_turns: 5
+  timeout_seconds: 120
+  max_output_tokens: 8192
+
+conditions:                # evals run이 실행하는 비교 조건
+  - name: baseline         # 이 Lab을 시작한 상태(h01)의 hel. tool은 read_file 하나. 코드를 고치기 전에 측정한다
+    harness: hel
+  - name: variant-bash     # 이 Lab에서 만든 hel. tool은 bash 하나
+    harness: hel
+    settings:
+      tools: [bash]
+  - name: variant-bash-read  # 이 Lab에서 만든 hel. bash와 read_file을 함께 준다
+    harness: hel
+    settings:
+      tools: [bash, read_file]
+
+tasks:
+  - path-echo-01
+  - find-echo-01
+
+repetitions: 3
+
+rubric:                    # 채점 기준 설명. 실제 판정은 각 task.yaml의 checks가 한다
+  output-exact: The final output equals the target file contents. Only one trailing newline on each side is ignored; nothing else is normalized.
+  tool-use: Not a pass/fail check. The report lists tool calls per run (tool name and command or path) and mean calls per tool.

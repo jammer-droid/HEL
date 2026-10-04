@@ -17,7 +17,7 @@
         "experiment_id": { "type": "string", "minLength": 1 },
         "lab": { "type": "string", "pattern": "^h[0-9]{2}$" },
         "task_id": { "type": "string", "minLength": 1 },
-        "condition": { "type": "string", "pattern": "^(baseline|variant|external-[a-z0-9-]+)$" },
+        "condition": { "type": "string", "pattern": "^(baseline|variant(-[a-z0-9-]+)?|external-[a-z0-9-]+)$" },
         "repetition": { "type": "integer", "minimum": 1 },
         "started_at": { "type": "string", "format": "date-time" },
         "ended_at": { "type": "string", "format": "date-time" }

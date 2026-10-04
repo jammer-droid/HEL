@@ -12,8 +12,10 @@
 ## 실행 규약
 
 ```text
-hel --instruction <TEXT> [--context <run-context.json> --record <record.json>]
+hel --instruction <TEXT> [--tools <a,b>] [--context <run-context.json> --record <record.json>]
 ```
+
+- `--tools`: model에게 줄 tool 목록(쉼표 구분). 없으면 `hel`의 기본 tool 구성을 쓴다(H0·`h01`: `read_file`, H1부터: `bash`). 측정 조건은 기본값에 기대지 않고 `settings.tools`로 명시한다. Lab 정의의 hel 조건에 `settings.tools`가 있으면 runner가 이 인자로 넘긴다. H1에서 추가(`h01`의 `hel`에는 없다. baseline 조건에는 `settings.tools`를 두지 않는다).
 
 - 작업 디렉터리(cwd)는 runner가 만든 task fixture 복사본이다. 파일을 읽는 tool은 이 디렉터리 밖을 읽지 않는다.
 - `--context`: runner가 쓰는 `record::RunContext`(run 정보, harness 버전, model, budget).
@@ -26,5 +28,6 @@ hel --instruction <TEXT> [--context <run-context.json> --record <record.json>]
 | hel tool | category |
 | --- | --- |
 | `read_file` | read |
+| `bash` | exec (H1. 명령 내용과 관계없이 exec. `cat`으로 읽어도 read로 세지 않는다) |
 
 Lab이 진행되며 tool이 추가되면 이 표를 갱신한다.

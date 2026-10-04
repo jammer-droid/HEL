@@ -63,7 +63,8 @@ git clone https://github.com/jammer-droid/HEL.git
 | --- | --- |
 | [`h00`](https://github.com/jammer-droid/HEL/tree/h00) | 기록 형식(`record`)과 측정 도구. harness는 없음 |
 | [`h01`](https://github.com/jammer-droid/HEL/tree/h01) | H0 완성 상태. 대화형 `hel` 포함 |
-| `h02` *(예정)* | H1 완성 상태 |
+| [`h02`](https://github.com/jammer-droid/HEL/tree/h02) | H1 완성 상태. `hel`에 bash tool 포함 |
+| `h03` *(예정)* | H2 완성 상태 |
 | `hXX` | H(XX-1) 완성 상태 |
 
 Lab을 시작할 때는 해당 tag에서 branch를 만든다. 예를 들어 H1은 `h01`에서 시작한다.

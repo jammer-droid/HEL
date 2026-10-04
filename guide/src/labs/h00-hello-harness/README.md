@@ -66,7 +66,7 @@ model 호출을 다루는 §7에는 이번 Lab과 관련된 내용이 두 가지
 
 ### 참고 자료
 
-- [Mini-SWE-Agent](https://github.com/SWE-agent/mini-swe-agent)는 약 100줄이다. tool calling API를 쓰지 않고, model이 쓴 텍스트에서 bash 명령을 찾아 실행한다. 대화는 순서대로 쌓기만 한다.
+- [Mini-SWE-Agent](https://github.com/SWE-agent/mini-swe-agent)는 약 100줄이다. 기본 설정은 tool calling API로 `bash` tool 하나를 보낸다. model이 쓴 텍스트에서 bash 명령을 찾아 실행하는 방식도 설정으로 고를 수 있다(2026-10 기준). 대화는 순서대로 쌓기만 한다.
 
 ## 이번에 해볼 것
 
@@ -83,7 +83,7 @@ model 호출을 다루는 §7에는 이번 Lab과 관련된 내용이 두 가지
 - agent loop의 시작과 끝을 정하는 조건
 - loop가 token 사용량을 어떻게 바꾸는가
 
-논문의 분류로 보면 가장 단순한 반복형 loop이고, Mini-SWE-Agent 쪽 끝에서 출발한다. 다른 점은 두 가지다. 텍스트에서 명령을 찾는 대신 API의 tool calling을 쓰고, bash 대신 파일 읽기 전용 tool `read_file` 하나만 둔다. tool 등록 구조는 만들지 않는다. tool이 하나뿐이라 아직은 필요가 없다.
+논문의 분류로 보면 가장 단순한 반복형 loop이고, Mini-SWE-Agent 쪽 끝에서 출발한다. tool calling API를 쓰는 것은 Mini-SWE-Agent의 기본 설정과 같고, bash 대신 파일 읽기 전용 tool `read_file` 하나만 둔다는 점이 다르다. tool 등록 구조는 만들지 않는다. tool이 하나뿐이라 아직은 필요가 없다.
 
 ## 실습
 

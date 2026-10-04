@@ -1,6 +1,6 @@
 //! evals — try, run and report Lab experiments (evals/SPEC.md §8).
 //!
-//!   evals try <task> [--lab <lab>] [--harness <name>] [--instruction <text>] [--fixture <dir>]
+//!   evals try <task> [--lab <lab>] [--harness <name> | --condition <name>] [--instruction <text>] [--fixture <dir>]
 //!   evals run [lab] [--conditions a,b] [--force]
 //!   evals report [lab]
 //!
@@ -21,12 +21,13 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 const USAGE: &str = "usage:
-  evals try <task> [--lab <lab>] [--harness hel|claude-code] [--instruction <text>] [--fixture <dir>] [--build]
+  evals try <task> [--lab <lab>] [--harness hel|claude-code | --condition <name>] [--instruction <text>] [--fixture <dir>] [--build]
   evals run [lab] [--conditions a,b] [--force] [--build]
   evals report [lab]
 
 hel: uses the installed `hel` on PATH if present, otherwise builds crates/hel.
---build always builds and runs the working tree.";
+--build always builds and runs the working tree.
+--condition runs try with that condition of the Lab definition (harness and settings).";
 
 fn main() -> ExitCode {
     match run() {
@@ -64,6 +65,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             "--build" => flags.build = true,
             "--lab" => flags.lab = Some(value()?),
             "--harness" => flags.harness = Some(value()?),
+            "--condition" => flags.condition = Some(value()?),
             "--instruction" => flags.instruction = Some(value()?),
             "--fixture" => flags.fixture = Some(PathBuf::from(value()?)),
             other => return Err(format!("unknown argument: {other}\n{USAGE}").into()),
@@ -77,6 +79,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 task: target.ok_or(format!("try needs a task ID\n{USAGE}"))?,
                 lab: flags.lab,
                 harness: flags.harness.unwrap_or_else(|| "hel".to_string()),
+                condition: flags.condition,
                 instruction: flags.instruction,
                 fixture: flags.fixture,
                 build: flags.build,
@@ -111,6 +114,7 @@ struct Flags {
     build: bool,
     lab: Option<String>,
     harness: Option<String>,
+    condition: Option<String>,
     instruction: Option<String>,
     fixture: Option<PathBuf>,
 }

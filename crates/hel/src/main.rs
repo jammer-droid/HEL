@@ -1,12 +1,12 @@
 //! hel — the harness built in this project.
 //!
-//! H0: a model ↔ tool loop with one read-only tool (`read_file`). The model is called
-//! repeatedly; each tool call it makes is executed and its result sent back, until the model
-//! answers without a tool call or the turn budget runs out.
+//! A model ↔ tool loop. The model is called repeatedly; each tool call it makes is executed and
+//! its result sent back, until the model answers without a tool call or the turn budget runs out.
+//! Tools: `bash` and `read_file` (H1); `--tools` chooses which ones the model gets (default: bash).
 //!
 //! Usage:
-//!   hel
-//!   hel --instruction <TEXT> [--context <run-context.json> --record <record.json>]
+//!   hel [--tools <a,b>]
+//!   hel --instruction <TEXT> [--tools <a,b>] [--context <run-context.json> --record <record.json>]
 //!
 //! Without `--instruction`, hel runs interactively: each line typed is sent to the model with the
 //! conversation so far. `--context` and `--record` are used by the eval runner. Without them, hel
@@ -25,15 +25,16 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant, SystemTime};
 
 use record::{
-    Budget, ComparisonClass, Harness, ModelRequest, RunContext, RunInfo, Termination, ToolCategory,
-    ToolEvent,
+    Budget, ComparisonClass, Harness, ModelRequest, RunContext, RunInfo, Termination, ToolEvent,
 };
 use serde_json::{Value, json};
 
 use output::RunLog;
+use tools::Toolset;
 
 struct Args {
     instruction: Option<String>,
+    tools: Toolset,
     context: Option<PathBuf>,
     record: Option<PathBuf>,
 }
@@ -63,10 +64,8 @@ fn run() -> Result<(), Box<dyn Error>> {
         Duration::from_secs(ctx.budget.timeout_seconds),
     )?;
     let workdir = env::current_dir()?;
-    let tool_defs = tools::definitions();
-
     let Some(instruction) = &args.instruction else {
-        return chat(&client, &workdir, &tool_defs, ctx.budget.max_turns);
+        return chat(&client, &workdir, &args.tools, ctx.budget.max_turns);
     };
 
     let started = SystemTime::now();
@@ -77,7 +76,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     run_loop(
         &client,
         &workdir,
-        &tool_defs,
+        &args.tools,
         &mut messages,
         ctx.budget.max_turns,
         &mut log,
@@ -103,7 +102,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 fn chat(
     client: &api::Client,
     workdir: &Path,
-    tool_defs: &Value,
+    tools: &Toolset,
     max_turns: u32,
 ) -> Result<(), Box<dyn Error>> {
     let stdin = io::stdin();
@@ -127,14 +126,7 @@ fn chat(
 
         messages.push(json!({ "role": "user", "content": input }));
         let mut log = RunLog::new();
-        run_loop(
-            client,
-            workdir,
-            tool_defs,
-            &mut messages,
-            max_turns,
-            &mut log,
-        );
+        run_loop(client, workdir, tools, &mut messages, max_turns, &mut log);
 
         for event in &log.events {
             let status = if event.ok == Some(false) {
@@ -161,13 +153,13 @@ fn chat(
 fn run_loop(
     client: &api::Client,
     workdir: &Path,
-    tool_defs: &Value,
+    tools: &Toolset,
     messages: &mut Vec<Value>,
     max_turns: u32,
     log: &mut RunLog,
 ) {
     for _ in 0..max_turns {
-        let exchange = match client.complete(messages, Some(tool_defs)) {
+        let exchange = match client.complete(messages, Some(tools.definitions())) {
             Ok(exchange) => exchange,
             Err(err) => {
                 log.failed(&err);
@@ -210,14 +202,10 @@ fn run_loop(
                 .as_str()
                 .and_then(|raw| serde_json::from_str(raw).ok())
                 .unwrap_or_else(|| json!({}));
-            let result = tools::execute(workdir, name, &args);
+            let result = tools.execute(workdir, name, &args);
             log.events.push(ToolEvent {
                 seq: log.events.len() as u32 + 1,
-                category: if name == tools::READ_FILE {
-                    ToolCategory::Read
-                } else {
-                    ToolCategory::Other
-                },
+                category: tools::category(name),
                 name: name.to_string(),
                 args,
                 ok: Some(result.is_ok()),
@@ -231,12 +219,18 @@ fn run_loop(
 
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut instruction = None;
+    let mut tools = None;
     let mut context = None;
     let mut record = None;
     while let Some(flag) = args.next() {
         let mut value = || args.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
             "--instruction" => instruction = Some(value()?),
+            "--tools" => {
+                let list = value()?;
+                let names: Vec<&str> = list.split(',').collect();
+                tools = Some(Toolset::new(&names)?);
+            }
             "--context" => context = Some(PathBuf::from(value()?)),
             "--record" => record = Some(PathBuf::from(value()?)),
             other => return Err(format!("unknown argument: {other}")),
@@ -248,8 +242,13 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     if context.is_some() && instruction.is_none() {
         return Err("--context needs --instruction".to_string());
     }
+    let tools = match tools {
+        Some(tools) => tools,
+        None => Toolset::new(tools::DEFAULT)?,
+    };
     Ok(Args {
         instruction,
+        tools,
         context,
         record,
     })
@@ -281,5 +280,44 @@ fn manual_context() -> RunContext {
             timeout_seconds: 120,
             max_output_tokens: 8192,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tool_names(args: &Args) -> Vec<String> {
+        args.tools
+            .definitions()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d["function"]["name"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    fn parse(list: &[&str]) -> Result<Args, String> {
+        parse_args(list.iter().map(|s| s.to_string()))
+    }
+
+    #[test]
+    fn tools_default_to_bash() {
+        let args = parse(&["--instruction", "hi"]).unwrap();
+        assert_eq!(tool_names(&args), ["bash"]);
+    }
+
+    #[test]
+    fn tools_flag_chooses_the_toolset() {
+        let args = parse(&["--tools", "bash,read_file", "--instruction", "hi"]).unwrap();
+        assert_eq!(tool_names(&args), ["bash", "read_file"]);
+        let args = parse(&["--tools", "read_file"]).unwrap();
+        assert_eq!(tool_names(&args), ["read_file"]);
+    }
+
+    #[test]
+    fn tools_flag_rejects_unknown_names() {
+        let err = parse(&["--tools", "bash,grep"]).err().unwrap();
+        assert!(err.contains("unknown tool: grep"), "{err}");
     }
 }

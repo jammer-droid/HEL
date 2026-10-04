@@ -6,7 +6,7 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
-use record::{Metric, MetricStatus};
+use record::{Metric, MetricStatus, Record, ToolEvent};
 
 use crate::check::{Checked, Judged};
 use crate::spec::Plan;
@@ -21,6 +21,8 @@ struct Row {
     tokens: String,
     calls: String,
     wall: String,
+    /// Mean tool calls per run by tool name, e.g. `bash 2.0 · read_file 1.0`.
+    tools: String,
 }
 
 pub fn write(root: &Path, plan: &Plan, checked: &Checked) -> Result<(), Box<dyn Error>> {
@@ -103,6 +105,7 @@ fn rows(judged: &[Judged]) -> Vec<Row> {
                 ),
                 calls: mean_of(|u| &u.model_calls),
                 wall: mean_of(|u| &u.wall_time_ms),
+                tools: tool_means(&records),
                 condition,
                 task,
             }
@@ -133,6 +136,7 @@ fn print_terminal(plan: &Plan, runs: usize, invalid: usize, rows: &[Row], check_
     header.extend(check_ids.iter().cloned());
     header.push("in/out tokens".to_string());
     header.push("calls".to_string());
+    header.push("tools".to_string());
 
     let mut table = vec![header];
     for row in rows {
@@ -144,6 +148,7 @@ fn print_terminal(plan: &Plan, runs: usize, invalid: usize, rows: &[Row], check_
         line.extend(check_ids.iter().map(|id| check_cell(row, id)));
         line.push(row.tokens.clone());
         line.push(row.calls.clone());
+        line.push(row.tools.clone());
         table.push(line);
     }
     let widths: Vec<usize> = (0..table[0].len())
@@ -195,8 +200,11 @@ fn markdown(
     for id in check_ids {
         write!(out, " {id} |")?;
     }
-    writeln!(out, " in/out tokens | model calls | wall time (ms) |")?;
-    writeln!(out, "|{}", " --- |".repeat(8 + check_ids.len()))?;
+    writeln!(
+        out,
+        " in/out tokens | model calls | wall time (ms) | tool calls |"
+    )?;
+    writeln!(out, "|{}", " --- |".repeat(9 + check_ids.len()))?;
     for row in rows {
         write!(
             out,
@@ -206,7 +214,11 @@ fn markdown(
         for id in check_ids {
             write!(out, " {} |", check_cell(row, id))?;
         }
-        writeln!(out, " {} | {} | {} |", row.tokens, row.calls, row.wall)?;
+        writeln!(
+            out,
+            " {} | {} | {} | {} |",
+            row.tokens, row.calls, row.wall, row.tools
+        )?;
     }
     writeln!(
         out,
@@ -230,6 +242,11 @@ fn markdown(
             "- **{}** — {} · {termination}{changed}",
             run.run_id, run.verdict.overall
         )?;
+        if let Some(record) = &run.record {
+            for event in &record.events {
+                writeln!(out, "  - tool: {}", describe_event(event))?;
+            }
+        }
         for check in &run.verdict.checks {
             if check.result == "fail" || run.verdict.overall == "invalid" {
                 writeln!(out, "  - {} ({})", check.id, check.result)?;
@@ -258,4 +275,84 @@ fn mean<'a>(metrics: impl Iterator<Item = &'a Metric>) -> String {
     }
     let mean = values.iter().sum::<f64>() / values.len() as f64;
     format!("{mean:.0}{}", if derived { "*" } else { "" })
+}
+
+fn tool_means(records: &[&Record]) -> String {
+    if records.is_empty() {
+        return "—".to_string();
+    }
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for record in records {
+        for event in &record.events {
+            *counts.entry(event.name.as_str()).or_default() += 1;
+        }
+    }
+    if counts.is_empty() {
+        return "none".to_string();
+    }
+    counts
+        .iter()
+        .map(|(name, count)| format!("{name} {:.1}", *count as f64 / records.len() as f64))
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
+/// One line per tool call: the name and its main argument (`command` or `path`).
+fn describe_event(event: &ToolEvent) -> String {
+    const MAX_CHARS: usize = 80;
+    let arg = ["command", "path", "file_path"]
+        .iter()
+        .find_map(|key| event.args.get(key).and_then(|v| v.as_str()))
+        .map(str::to_string)
+        .unwrap_or_else(|| event.args.to_string());
+    let arg: String = arg.replace('\n', " ⏎ ");
+    let shown = if arg.chars().count() > MAX_CHARS {
+        format!("{}…", arg.chars().take(MAX_CHARS).collect::<String>())
+    } else {
+        arg
+    };
+    let failed = if event.ok == Some(false) {
+        " (error)"
+    } else {
+        ""
+    };
+    format!("`{}` `{}`{failed}", event.name, shown.replace('`', "'"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use record::ToolCategory;
+    use serde_json::json;
+
+    fn event(name: &str, args: serde_json::Value, ok: Option<bool>) -> ToolEvent {
+        ToolEvent {
+            seq: 1,
+            category: ToolCategory::Other,
+            name: name.to_string(),
+            args,
+            ok,
+        }
+    }
+
+    #[test]
+    fn describes_command_and_path_arguments() {
+        let bash = event(
+            "bash",
+            json!({ "command": "find . -name a.txt" }),
+            Some(true),
+        );
+        assert_eq!(describe_event(&bash), "`bash` `find . -name a.txt`");
+        let read = event("read_file", json!({ "path": "a.txt" }), Some(false));
+        assert_eq!(describe_event(&read), "`read_file` `a.txt` (error)");
+    }
+
+    #[test]
+    fn shortens_long_multiline_commands() {
+        let long = "x".repeat(100);
+        let bash = event("bash", json!({ "command": format!("cat a\n{long}") }), None);
+        let shown = describe_event(&bash);
+        assert!(shown.contains("cat a ⏎ x"));
+        assert!(shown.ends_with("…`"));
+    }
 }

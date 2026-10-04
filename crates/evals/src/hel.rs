@@ -9,6 +9,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime};
 
 use record::{Record, Termination};
+use serde_json::Value;
 
 use crate::runner::{self, RunJob};
 
@@ -96,6 +97,24 @@ fn build(root: &Path) -> Result<String, Box<dyn Error>> {
     runner::git_version(root, &SOURCES)
 }
 
+/// `settings.tools` (a list of tool names) becomes `--tools a,b`. No setting, no flag:
+/// hel then uses its default tool set, so the Lab's starting code runs unchanged.
+fn tool_args(settings: &Value) -> Result<Vec<String>, Box<dyn Error>> {
+    let Some(tools) = settings.get("tools") else {
+        return Ok(Vec::new());
+    };
+    let names: Option<Vec<&str>> = tools
+        .as_array()
+        .map(|list| list.iter().map(Value::as_str).collect())
+        .unwrap_or(None);
+    match names {
+        Some(names) if !names.is_empty() => Ok(vec!["--tools".to_string(), names.join(",")]),
+        _ => Err(
+            format!("settings.tools must be a non-empty list of tool names, got {tools}").into(),
+        ),
+    }
+}
+
 pub fn run(job: &RunJob) -> Result<Record, Box<dyn Error>> {
     let context_path = job.run_dir.join("context.json");
     fs::write(
@@ -108,6 +127,7 @@ pub fn run(job: &RunJob) -> Result<Record, Box<dyn Error>> {
     let mut command = Command::new(&hel.path);
     command
         .args(["--instruction", job.instruction])
+        .args(tool_args(&job.condition.settings)?)
         .arg("--context")
         .arg(&context_path)
         .arg("--record")
@@ -148,5 +168,30 @@ pub fn run(job: &RunJob) -> Result<Record, Box<dyn Error>> {
                 Some("raw/stderr.txt".to_string()),
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn no_tools_setting_adds_no_flag() {
+        assert!(tool_args(&json!({})).unwrap().is_empty());
+        assert!(tool_args(&Value::Null).unwrap().is_empty());
+    }
+
+    #[test]
+    fn tools_setting_becomes_comma_separated_flag() {
+        let args = tool_args(&json!({ "tools": ["bash", "read_file"] })).unwrap();
+        assert_eq!(args, ["--tools", "bash,read_file"]);
+    }
+
+    #[test]
+    fn rejects_malformed_tools_setting() {
+        assert!(tool_args(&json!({ "tools": [] })).is_err());
+        assert!(tool_args(&json!({ "tools": "bash" })).is_err());
+        assert!(tool_args(&json!({ "tools": [1] })).is_err());
     }
 }

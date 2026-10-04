@@ -14,9 +14,10 @@
 
 - [H0 Hello Harness](labs/h00-hello-harness/README.md)
     - [FAQ](labs/h00-hello-harness/faq.md)
-- [대화형 기본 틀](labs/interactive-cli/README.md)
-    - [FAQ](labs/interactive-cli/faq.md)
-- [H1 Tool Loop]()
+- [대화형 도구의 기본 틀](labs/h0.5-interactive-cli/README.md)
+    - [FAQ](labs/h0.5-interactive-cli/faq.md)
+- [H1 Tool Loop](labs/h01-tool-loop/README.md)
+    - [FAQ](labs/h01-tool-loop/faq.md)
 - [H2 Editing]()
 
 # Part II — Repository Intelligence

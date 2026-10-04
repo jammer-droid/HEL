@@ -1,4 +1,4 @@
-# 대화형 기본 틀
+# 대화형 도구의 기본 틀
 
 > [!NOTE]
 > - 이 페이지의 코드는 H0 완료 상태 [`h01`](https://github.com/jammer-droid/HEL/tree/h01)에 들어 있다.
@@ -7,7 +7,7 @@ H0의 `hel`은 `--instruction`으로 지시 하나를 받아 loop를 끝까지 �
 
 ## 무엇을 바꾸나
 
-H0의 agent loop(`run_loop`)는 대화 기록 `messages`를 빌려 받아, 그 안에 assistant 응답과 tool 결과를 덧붙인다. 대화형 모드는 이 loop를 한 번 더 감싸기만 하면 된다.
+H0의 agent loop(`run_loop`)는 대화 기록 `messages`를 받아, 그 안에 assistant 응답과 tool 결과를 덧붙인다. 대화형 모드는 이 loop를 한 번 더 감싸기만 하면 된다.
 
 ```text
 사람 입력 한 줄

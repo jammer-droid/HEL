@@ -1,0 +1,12 @@
+id: find-echo-01
+eval_version: eval-v1
+description: 위치를 알려 주지 않은 파일을 찾아 그대로 출력한다 (H1). 대상은 archive/2024/q3/kv9/target.txt
+instruction: >
+  A file named target.txt exists somewhere under the current directory.
+  Its location is not given. Find it, then print its contents exactly as they are.
+  Do not add anything else.
+fixture: fixture/
+checks:
+  - id: output-exact
+    type: output_exact_match
+    expected_file: fixture/archive/2024/q3/kv9/target.txt

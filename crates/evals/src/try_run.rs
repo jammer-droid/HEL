@@ -19,6 +19,8 @@ pub struct TryOptions {
     pub task: String,
     pub lab: Option<String>,
     pub harness: String,
+    /// A condition of the Lab definition to run as; overrides `harness`.
+    pub condition: Option<String>,
     pub instruction: Option<String>,
     pub fixture: Option<PathBuf>,
     pub build: bool,
@@ -31,7 +33,15 @@ pub fn run(root: &Path, options: TryOptions) -> Result<(), Box<dyn Error>> {
     };
     let plan = spec::load_lab(root, &lab)?;
     let task = spec::load_task(root, &options.task)?;
-    let condition = condition_for(&plan, &options.harness);
+    let condition = match &options.condition {
+        Some(name) => plan
+            .conditions
+            .iter()
+            .find(|c| &c.name == name)
+            .cloned()
+            .ok_or_else(|| format!("{} has no condition named {name}", plan.lab))?,
+        None => condition_for(&plan, &options.harness),
+    };
     if !runner::harness_available(&condition) {
         return Err(format!("{} is not installed", condition.harness).into());
     }

@@ -30,7 +30,8 @@ harness 구현은 바이브 코딩으로 진행한다. 코드를 작성하는 �
 | --- | --- |
 | [`h00`](https://github.com/jammer-droid/HEL/tree/h00) | 기록 형식(`record`), 측정 도구(`evals`), H0 가이드. `hel`은 없다 |
 | [`h01`](https://github.com/jammer-droid/HEL/tree/h01) | H0 완료 상태. `hel`(agent loop, `read_file`, 대화형 모드) |
-| `h02` *(예정)* | H1 완료 상태 |
+| [`h02`](https://github.com/jammer-droid/HEL/tree/h02) | H1 완료 상태. `hel`에 bash tool, `--tools`로 tool 구성 선택(기본 bash) |
+| `h03` *(예정)* | H2 완료 상태 |
 
 ```bash
 git clone https://github.com/jammer-droid/HEL.git
@@ -87,11 +88,16 @@ hel --instruction "Read the file hello.txt and print its contents exactly as the
 `--instruction`을 주면 지시 하나를 실행하고 끝난다.
 
 - 실행한 폴더를 작업 디렉터리로 쓴다. `read_file` tool은 이 폴더 안의 파일만 읽는다.
+- `--tools`를 생략하면 `bash` tool 하나만 준다. model이 쓴 명령을 이 폴더에서 그대로 실행한다.
 - 출력과 오류 메시지는 영어다.
+
+> [!WARNING]
+> `bash` tool은 명령을 확인 없이 실행하고, 작업 디렉터리 밖의 파일도 읽거나 바꿀 수 있다. 중요한 파일이 없는 폴더에서 실행한다. 읽기만 허용하려면 `--tools read_file`로 실행한다.
 
 | 옵션 | 필수 | 설명 |
 | --- | --- | --- |
 | `--instruction "<text>"` | 아니요 | model에게 보낼 지시. 없으면 대화형으로 실행한다 |
+| `--tools <a,b>` | 아니요 | model에게 줄 tool(`bash`, `read_file`)을 쉼표로 나열한다. 없으면 `bash` |
 | `--context <file>` | 아니요 | 실행 정보 파일(JSON). run ID, Lab, task, 조건, model, budget(최대 turn 수, timeout, 출력 token 한도)을 담는다. 없으면 기본값으로 실행한다. `--instruction`과 함께 써야 한다 |
 | `--record <file>` | 아니요 | 실행 기록(record)을 쓸 경로. 같은 폴더의 `raw/requests.jsonl`에 model 요청과 응답 원본도 남긴다(`Authorization` header 제외). `--context`와 함께 써야 한다 |
 
@@ -101,7 +107,7 @@ hel --instruction "Read the file hello.txt and print its contents exactly as the
 
 1. task의 `fixture/`를 임시 폴더에 복사해 작업 디렉터리로 쓴다.
 2. Lab 정의의 model과 budget으로 `results/.../<run-id>/context.json`을 만든다.
-3. `hel --instruction <task 지시문> --context <context.json> --record <record.json>`을 실행한다. 환경 변수는 `PATH`와 `DEEPSEEK_API_KEY`만 넘긴다.
+3. `hel --instruction <task 지시문> --context <context.json> --record <record.json>`을 실행한다. Lab 정의의 조건에 `settings.tools`가 있으면 `--tools`로 넘긴다. 환경 변수는 `PATH`와 `DEEPSEEK_API_KEY`만 넘긴다.
 4. budget의 timeout이 지나면 `hel`을 종료한다.
 5. `hel`이 쓴 `record.json`을 읽어 채점한다.
 
@@ -128,6 +134,7 @@ evals try read-echo-01
 | --- | --- | --- |
 | `--lab <lab>` | 최신 Lab | model과 budget을 가져올 Lab |
 | `--harness <name>` | `hel` | `hel` 또는 `claude-code` |
+| `--condition <name>` | 없음 | Lab 정의의 조건 하나(harness와 설정)로 실행한다. 예: `evals try find-echo-01 --condition variant-bash` |
 | `--instruction "<text>"` | task의 지시문 | 이번 실행만 지시문을 바꾼다. 채점은 참고용으로 표시된다 |
 | `--fixture <dir>` | task의 `fixture/` | 이번 실행만 입력 파일 폴더를 바꾼다. 채점은 참고용으로 표시된다 |
 

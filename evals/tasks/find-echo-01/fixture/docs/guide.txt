@@ -1,0 +1,2 @@
+Setup guide
+Step 1: install the tools.
