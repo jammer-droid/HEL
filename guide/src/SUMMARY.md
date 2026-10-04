@@ -32,7 +32,11 @@
 
 # Part III — Context
 
-- [H5 Context Budget]()
+- [Part III 개요](parts/part3-context.md)
+- [H5 Context Budget](labs/h05-context-budget/README.md)
+    - [Codex의 context budget](labs/h05-context-budget/codex.md)
+    - [DeepSeek Harness의 context budget](labs/h05-context-budget/deepseek-harness.md)
+    - [FAQ](labs/h05-context-budget/faq.md)
 - [H6 Compaction]()
 
 # Part IV — Safety and Runtime Reliability

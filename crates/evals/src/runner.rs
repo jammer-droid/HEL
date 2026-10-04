@@ -313,6 +313,9 @@ pub fn failure_record(
                 value: Some(finished.wall_time_ms as f64),
                 status: MetricStatus::Measured,
             },
+            cached_input_tokens: unavailable(),
+            peak_context_tokens: unavailable(),
+            last_context_tokens: unavailable(),
         },
         events: Vec::new(),
         validity: Validity {

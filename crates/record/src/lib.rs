@@ -42,6 +42,17 @@ pub struct Metric {
     pub status: MetricStatus,
 }
 
+impl Metric {
+    /// A metric the harness could not report. Also the default for fields added after
+    /// record-v0, so older records still load.
+    pub fn unavailable() -> Self {
+        Self {
+            value: None,
+            status: MetricStatus::Unavailable,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolEvent {
     pub seq: u32,
@@ -91,6 +102,15 @@ pub struct Usage {
     pub output_tokens: Metric,
     pub model_calls: Metric,
     pub wall_time_ms: Metric,
+    /// Input tokens served from the provider's prompt cache, summed over the run (H5).
+    #[serde(default = "Metric::unavailable")]
+    pub cached_input_tokens: Metric,
+    /// Largest single-request input, i.e. the most context the run used at once (H5).
+    #[serde(default = "Metric::unavailable")]
+    pub peak_context_tokens: Metric,
+    /// Input of the last successful request: the context size when the run ended (H5).
+    #[serde(default = "Metric::unavailable")]
+    pub last_context_tokens: Metric,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -149,4 +169,22 @@ pub struct Budget {
     pub max_turns: u32,
     pub timeout_seconds: u64,
     pub max_output_tokens: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn usage_written_before_h5_loads_with_unavailable_context_fields() {
+        let measured = r#"{"value": 1.0, "status": "measured"}"#;
+        let json = format!(
+            r#"{{"input_tokens": {measured}, "output_tokens": {measured},
+                "model_calls": {measured}, "wall_time_ms": {measured}}}"#
+        );
+        let usage: Usage = serde_json::from_str(&json).unwrap();
+        assert_eq!(usage.cached_input_tokens, Metric::unavailable());
+        assert_eq!(usage.peak_context_tokens, Metric::unavailable());
+        assert_eq!(usage.last_context_tokens, Metric::unavailable());
+    }
 }

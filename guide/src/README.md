@@ -42,7 +42,7 @@ FAQ에는 본문에 넣지 않았지만 이후 Lab과 이어지는 이야기를 
 | | H2 Editing | coding agent의 edit는 왜 실패하는가? |
 | II. Repository Intelligence | H3 Repository Context | agent가 매번 repository를 다시 발견하지 않게 하려면? |
 | | H4 Repository Search | 전용 파일명·본문 검색 tool은 bash 검색의 탐색 비용을 어떻게 바꾸는가? |
-| III. Context | H5 Context Budget | history가 커질수록 어떤 문제가 생기는가? |
+| III. Context | H5 Context Budget | Codex와 DeepSeek Harness는 context budget을 어떻게 측정·배분하고, 한도에 가까워지면 무엇을 남기고 버리는가? |
 | | H6 Compaction | 무엇을 안전하게 잊을 수 있는가? |
 | IV. Safety and Runtime Reliability | H7 Permissions | allow / ask / deny 정책은 어디에 있어야 하는가? |
 | | H8 Sandbox | permission과 isolation은 왜 다른 문제인가? |

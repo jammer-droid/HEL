@@ -62,7 +62,10 @@
         "input_tokens": { "$ref": "#/$defs/metric" },
         "output_tokens": { "$ref": "#/$defs/metric" },
         "model_calls": { "$ref": "#/$defs/metric" },
-        "wall_time_ms": { "$ref": "#/$defs/metric" }
+        "wall_time_ms": { "$ref": "#/$defs/metric" },
+        "cached_input_tokens": { "$ref": "#/$defs/metric" },
+        "peak_context_tokens": { "$ref": "#/$defs/metric" },
+        "last_context_tokens": { "$ref": "#/$defs/metric" }
       }
     },
     "events": {

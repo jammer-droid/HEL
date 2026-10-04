@@ -27,6 +27,9 @@ pub struct Choice {
 pub struct TokenUsage {
     pub prompt_tokens: u64,
     pub completion_tokens: u64,
+    /// DeepSeek context caching: the part of `prompt_tokens` served from cache.
+    #[serde(default)]
+    pub prompt_cache_hit_tokens: Option<u64>,
 }
 
 /// One request/response pair. Written to the raw log without auth headers.

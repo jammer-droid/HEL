@@ -188,6 +188,8 @@ pub fn collect(job: &RunJob, stream: &str, finished: &Finished) -> Record {
         .sum::<f64>()
     });
     let output_tokens = usage.and_then(|u| u.get("output_tokens").and_then(Value::as_f64));
+    let cached_input_tokens =
+        usage.and_then(|u| u.get("cache_read_input_tokens").and_then(Value::as_f64));
 
     let events = tool_uses
         .iter()
@@ -253,6 +255,10 @@ pub fn collect(job: &RunJob, stream: &str, finished: &Finished) -> Record {
                 MetricStatus::Derived,
             ),
             wall_time_ms: metric(Some(finished.wall_time_ms as f64), MetricStatus::Measured),
+            cached_input_tokens: metric(cached_input_tokens, MetricStatus::Measured),
+            // Per-request context sizes are not collected from stream-json yet.
+            peak_context_tokens: Metric::unavailable(),
+            last_context_tokens: Metric::unavailable(),
         },
         events,
         validity: Validity {
@@ -394,6 +400,11 @@ mod tests {
             Some("Hello, harness!")
         );
         assert_eq!(record.usage.input_tokens.value, Some(1296.0));
+        assert_eq!(record.usage.cached_input_tokens.value, Some(512.0));
+        assert_eq!(
+            record.usage.peak_context_tokens.status,
+            MetricStatus::Unavailable
+        );
         assert_eq!(record.usage.output_tokens.value, Some(189.0));
         assert_eq!(record.usage.model_calls.value, Some(2.0));
         assert_eq!(record.usage.model_calls.status, MetricStatus::Derived);

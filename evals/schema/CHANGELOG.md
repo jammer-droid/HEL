@@ -1,5 +1,12 @@
 # Record Schema Changelog
 
+## record-v0 호환 확장 (H5, 2026-10-04)
+
+- `usage`에 선택 필드 `cached_input_tokens`, `peak_context_tokens`, `last_context_tokens`(metric)를 추가한다. H5에서 cache hit 비율과 호출 시점의 context 크기를 run 단위로 비교하고, H6 compaction 비교에 같은 값을 쓰기 위해서다.
+- 필수 필드가 아니어서 기존 record는 그대로 유효하다. 읽을 때 없으면 `unavailable`로 본다(`record` crate의 serde default). `schema_version`은 `record-v0` 유지. 과거 record 재생성 불필요.
+- 호출별 context·cache hit는 raw log에 두고 `evals report`가 Runs 절에 표시한다.
+- availability: hel은 세 필드 모두 measured. claude-code는 `cached_input_tokens`만 measured(`cache_read_input_tokens`), 나머지 unavailable.
+
 ## record-v0 호환 확장 (eval-v1, H1, 2026-10-04)
 
 - `run.condition`에 `variant-<name>`을 허용한다(pattern 확장). H1에서 같은 `hel` 코드로 tool 구성(bash만 / bash + read_file)을 나눠 비교하기 위해서다.

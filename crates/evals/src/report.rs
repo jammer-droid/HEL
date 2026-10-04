@@ -19,6 +19,8 @@ struct Row {
     pass: usize,
     checks: BTreeMap<String, (usize, usize)>,
     tokens: String,
+    /// Mean cached input tokens and mean peak context, e.g. `4800 · 4591`.
+    context: String,
     calls: String,
     wall: String,
     /// Mean tool calls per run by tool name, e.g. `bash 2.0 · read_file 1.0`.
@@ -55,7 +57,7 @@ pub fn write(root: &Path, plan: &Plan, checked: &Checked) -> Result<(), Box<dyn 
         .count();
 
     print_terminal(plan, judged.len(), invalid, &rows, &check_ids);
-    let markdown = markdown(plan, judged, &rows, &check_ids)?;
+    let markdown = markdown(&root.join(&plan.results), plan, judged, &rows, &check_ids)?;
     let path = root.join(&plan.results).join("report.md");
     fs::write(&path, markdown)?;
     println!("\nreport    {}", plan.results.join("report.md").display());
@@ -103,6 +105,11 @@ fn rows(judged: &[Judged]) -> Vec<Row> {
                     mean_of(|u| &u.input_tokens),
                     mean_of(|u| &u.output_tokens)
                 ),
+                context: format!(
+                    "{} · {}",
+                    mean_of(|u| &u.cached_input_tokens),
+                    mean_of(|u| &u.peak_context_tokens)
+                ),
                 calls: mean_of(|u| &u.model_calls),
                 wall: mean_of(|u| &u.wall_time_ms),
                 tools: tool_means(&records),
@@ -135,6 +142,7 @@ fn print_terminal(plan: &Plan, runs: usize, invalid: usize, rows: &[Row], check_
     ];
     header.extend(check_ids.iter().cloned());
     header.push("in/out tokens".to_string());
+    header.push("cached · peak ctx".to_string());
     header.push("calls".to_string());
     header.push("tools".to_string());
 
@@ -147,6 +155,7 @@ fn print_terminal(plan: &Plan, runs: usize, invalid: usize, rows: &[Row], check_
         ];
         line.extend(check_ids.iter().map(|id| check_cell(row, id)));
         line.push(row.tokens.clone());
+        line.push(row.context.clone());
         line.push(row.calls.clone());
         line.push(row.tools.clone());
         table.push(line);
@@ -171,6 +180,7 @@ fn print_terminal(plan: &Plan, runs: usize, invalid: usize, rows: &[Row], check_
 }
 
 fn markdown(
+    results: &Path,
     plan: &Plan,
     judged: &[Judged],
     rows: &[Row],
@@ -202,9 +212,9 @@ fn markdown(
     }
     writeln!(
         out,
-        " in/out tokens | model calls | wall time (ms) | tool calls |"
+        " in/out tokens | cached in · peak context | model calls | wall time (ms) | tool calls |"
     )?;
-    writeln!(out, "|{}", " --- |".repeat(9 + check_ids.len()))?;
+    writeln!(out, "|{}", " --- |".repeat(10 + check_ids.len()))?;
     for row in rows {
         write!(
             out,
@@ -216,8 +226,8 @@ fn markdown(
         }
         writeln!(
             out,
-            " {} | {} | {} | {} |",
-            row.tokens, row.calls, row.wall, row.tools
+            " {} | {} | {} | {} | {} |",
+            row.tokens, row.context, row.calls, row.wall, row.tools
         )?;
     }
     writeln!(
@@ -243,6 +253,15 @@ fn markdown(
             run.run_id, run.verdict.overall
         )?;
         if let Some(record) = &run.record {
+            if let Some(line) = record
+                .artifacts
+                .raw_transcript
+                .as_ref()
+                .and_then(|raw| fs::read_to_string(results.join(&run.run_id).join(raw)).ok())
+                .and_then(|raw| context_per_call(&raw))
+            {
+                writeln!(out, "  - {line}")?;
+            }
             for event in &record.events {
                 writeln!(out, "  - tool: {}", describe_event(event))?;
             }
@@ -259,6 +278,34 @@ fn markdown(
         }
     }
     Ok(out)
+}
+
+/// Per-call context from a raw log whose lines carry an OpenAI-style `response.usage`, e.g.
+/// `context per call: 462 → 4409 → 4591 · cache hit: 0 → 640 → 4352`. `None` for other formats.
+fn context_per_call(raw: &str) -> Option<String> {
+    let mut contexts = Vec::new();
+    let mut hits = Vec::new();
+    for line in raw.lines() {
+        let entry: serde_json::Value = serde_json::from_str(line).ok()?;
+        let Some(usage) = entry.pointer("/response/usage") else {
+            continue;
+        };
+        contexts.push(usage.get("prompt_tokens")?.as_u64()?.to_string());
+        hits.push(
+            usage
+                .get("prompt_cache_hit_tokens")
+                .and_then(serde_json::Value::as_u64)
+                .map_or("?".to_string(), |hit| hit.to_string()),
+        );
+    }
+    if contexts.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "context per call: {} · cache hit: {}",
+        contexts.join(" → "),
+        hits.join(" → ")
+    ))
 }
 
 fn mean<'a>(metrics: impl Iterator<Item = &'a Metric>) -> String {
@@ -354,5 +401,26 @@ mod tests {
         let shown = describe_event(&bash);
         assert!(shown.contains("cat a ⏎ x"));
         assert!(shown.ends_with("…`"));
+    }
+
+    #[test]
+    fn lists_context_and_cache_hits_per_call() {
+        let raw = [
+            r#"{"request":{},"response":{"usage":{"prompt_tokens":462,"prompt_cache_hit_tokens":0}}}"#,
+            r#"{"request":{},"response":{"usage":{"prompt_tokens":4409,"prompt_cache_hit_tokens":640}}}"#,
+            r#"{"error":"timeout"}"#,
+            r#"{"request":{},"response":{"usage":{"prompt_tokens":4591}}}"#,
+        ]
+        .join("\n");
+        assert_eq!(
+            context_per_call(&raw).as_deref(),
+            Some("context per call: 462 → 4409 → 4591 · cache hit: 0 → 640 → ?")
+        );
+    }
+
+    #[test]
+    fn skips_raw_logs_without_usage() {
+        assert_eq!(context_per_call(r#"{"type":"assistant"}"#), None);
+        assert_eq!(context_per_call("not json"), None);
     }
 }

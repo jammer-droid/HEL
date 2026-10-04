@@ -12,6 +12,9 @@
 | `usage.output_tokens` | measured (`completion_tokens` 합, reasoning 포함) | measured (`result.usage.output_tokens`) |
 | `usage.model_calls` | measured (HTTP 요청 수) | derived (assistant message의 고유 `id` 수) |
 | `usage.wall_time_ms` | measured | measured (runner가 프로세스 시간 측정) |
+| `usage.cached_input_tokens` | measured (`usage.prompt_cache_hit_tokens` 합. 한 응답이라도 없거나 호출이 실패하면 unavailable) | measured (`result.usage.cache_read_input_tokens`) |
+| `usage.peak_context_tokens` | measured (성공 호출 `prompt_tokens`의 최댓값) | unavailable (stream-json의 요청별 usage 미수집) |
+| `usage.last_context_tokens` | measured (마지막 성공 호출의 `prompt_tokens`) | unavailable (같은 이유) |
 | `events` | measured | measured (`tool_use` block) |
 | `events[].ok` | measured | measured (`tool_result.is_error`) |
 

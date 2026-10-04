@@ -157,6 +157,9 @@ fn chat(
         if log.termination == Termination::MaxTurns {
             eprintln!("hel: stopped after {max_turns} model calls");
         }
+        if let Some(summary) = log.context_summary() {
+            eprintln!("[{summary}]");
+        }
     }
 }
 

@@ -21,6 +21,8 @@ pub struct RunLog {
     input_tokens: u64,
     output_tokens: u64,
     usage_complete: bool,
+    /// Prompt tokens and cache hits of each successful call, in order.
+    contexts: Vec<Context>,
     model_calls: u32,
     actual_model: Option<String>,
     pub events: Vec<ToolEvent>,
@@ -36,6 +38,7 @@ impl RunLog {
             input_tokens: 0,
             output_tokens: 0,
             usage_complete: true,
+            contexts: Vec::new(),
             model_calls: 0,
             actual_model: None,
             events: Vec::new(),
@@ -52,6 +55,10 @@ impl RunLog {
             Some(usage) => {
                 self.input_tokens += usage.prompt_tokens;
                 self.output_tokens += usage.completion_tokens;
+                self.contexts.push(Context {
+                    tokens: usage.prompt_tokens,
+                    cache_hit: usage.prompt_cache_hit_tokens,
+                });
             }
             None => self.usage_complete = false,
         }
@@ -74,6 +81,18 @@ impl RunLog {
         };
         self.error = Some(err.to_string());
         self.raw.push(json!({ "error": err.to_string() }));
+    }
+
+    /// One line describing the context of the last call, e.g.
+    /// `context: 4,591 tokens · cache hit 4,352 (95%)`. `None` before any successful call.
+    pub fn context_summary(&self) -> Option<String> {
+        let last = self.contexts.last()?;
+        let mut line = format!("context: {} tokens", thousands(last.tokens));
+        if let Some(hit) = last.cache_hit {
+            let percent = (hit * 100).checked_div(last.tokens).unwrap_or(0);
+            line.push_str(&format!(" · cache hit {} ({percent}%)", thousands(hit)));
+        }
+        Some(line)
     }
 
     pub fn write(
@@ -142,6 +161,10 @@ impl RunLog {
                 output_tokens: self.token_metric(self.output_tokens),
                 model_calls: measured(self.model_calls as f64),
                 wall_time_ms: measured(wall_time_ms as f64),
+                cached_input_tokens: self.cached_metric(),
+                peak_context_tokens: self
+                    .context_metric(self.contexts.iter().map(|c| c.tokens).max()),
+                last_context_tokens: self.context_metric(self.contexts.last().map(|c| c.tokens)),
             },
             events: self.events.clone(),
             validity: Validity {
@@ -158,17 +181,175 @@ impl RunLog {
         if self.usage_complete {
             measured(value as f64)
         } else {
-            Metric {
-                value: None,
-                status: MetricStatus::Unavailable,
-            }
+            Metric::unavailable()
         }
     }
+
+    /// Unavailable unless every successful call reported its cache hits and none failed.
+    fn cached_metric(&self) -> Metric {
+        let hits: Option<u64> = self.contexts.iter().map(|c| c.cache_hit).sum();
+        match hits {
+            Some(hits) if self.usage_complete => measured(hits as f64),
+            _ => Metric::unavailable(),
+        }
+    }
+
+    fn context_metric(&self, value: Option<u64>) -> Metric {
+        value.map_or_else(Metric::unavailable, |v| measured(v as f64))
+    }
+}
+
+struct Context {
+    tokens: u64,
+    cache_hit: Option<u64>,
+}
+
+/// Formats 4591 as `4,591`.
+fn thousands(value: u64) -> String {
+    let digits = value.to_string();
+    let mut out = String::new();
+    for (i, ch) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out
 }
 
 fn measured(value: f64) -> Metric {
     Metric {
         value: Some(value),
         status: MetricStatus::Measured,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::ChatResponse;
+    use record::{Budget, ComparisonClass, Harness, ModelRequest, RunInfo};
+
+    fn exchange(usage: Value) -> Exchange {
+        let response_json = json!({
+            "model": "deepseek-flash",
+            "choices": [{ "message": { "role": "assistant", "content": "" }, "finish_reason": "stop" }],
+            "usage": usage,
+        });
+        Exchange {
+            request: json!({}),
+            response: serde_json::from_value::<ChatResponse>(response_json.clone()).unwrap(),
+            response_json,
+        }
+    }
+
+    fn usage(prompt: u64, hit: Option<u64>) -> Value {
+        let mut usage = json!({ "prompt_tokens": prompt, "completion_tokens": 10 });
+        if let Some(hit) = hit {
+            usage["prompt_cache_hit_tokens"] = json!(hit);
+        }
+        usage
+    }
+
+    fn record(log: &RunLog) -> Record {
+        let ctx = RunContext {
+            run: RunInfo {
+                run_id: "r".into(),
+                experiment_id: "e".into(),
+                lab: "h05".into(),
+                task_id: "t".into(),
+                condition: "baseline".into(),
+                repetition: 1,
+            },
+            harness: Harness {
+                name: "hel".into(),
+                version: "0".into(),
+                comparison_class: ComparisonClass::Subject,
+            },
+            model: ModelRequest {
+                provider: "deepseek".into(),
+                requested: "deepseek-flash".into(),
+                params: json!({}),
+            },
+            budget: Budget {
+                max_turns: 5,
+                timeout_seconds: 60,
+                max_output_tokens: 8192,
+            },
+        };
+        log.to_record(&ctx, SystemTime::UNIX_EPOCH, SystemTime::UNIX_EPOCH, 0)
+    }
+
+    #[test]
+    fn records_cache_hits_and_context_sizes() {
+        let mut log = RunLog::new();
+        log.exchange(&exchange(usage(462, Some(0))));
+        log.exchange(&exchange(usage(4409, Some(640))));
+        log.exchange(&exchange(usage(4591, Some(4352))));
+
+        let usage = record(&log).usage;
+        assert_eq!(usage.input_tokens.value, Some(9462.0));
+        assert_eq!(usage.cached_input_tokens, measured(4992.0));
+        assert_eq!(usage.peak_context_tokens, measured(4591.0));
+        assert_eq!(usage.last_context_tokens, measured(4591.0));
+        assert_eq!(
+            log.context_summary().as_deref(),
+            Some("context: 4,591 tokens · cache hit 4,352 (94%)")
+        );
+    }
+
+    #[test]
+    fn peak_context_can_come_before_the_last_call() {
+        let mut log = RunLog::new();
+        log.exchange(&exchange(usage(5000, Some(0))));
+        log.exchange(&exchange(usage(1200, Some(1024))));
+
+        let usage = record(&log).usage;
+        assert_eq!(usage.peak_context_tokens, measured(5000.0));
+        assert_eq!(usage.last_context_tokens, measured(1200.0));
+    }
+
+    #[test]
+    fn cache_hits_are_unavailable_when_a_response_omits_them() {
+        let mut log = RunLog::new();
+        log.exchange(&exchange(usage(462, Some(0))));
+        log.exchange(&exchange(usage(900, None)));
+
+        let usage = record(&log).usage;
+        assert_eq!(usage.cached_input_tokens, Metric::unavailable());
+        assert_eq!(usage.last_context_tokens, measured(900.0));
+        assert_eq!(
+            log.context_summary().as_deref(),
+            Some("context: 900 tokens")
+        );
+    }
+
+    #[test]
+    fn a_failed_call_makes_cache_hits_unavailable() {
+        let mut log = RunLog::new();
+        log.exchange(&exchange(usage(462, Some(0))));
+        log.failed(&ApiError::Timeout("slow".into()));
+
+        let usage = record(&log).usage;
+        assert_eq!(usage.cached_input_tokens, Metric::unavailable());
+        assert_eq!(usage.peak_context_tokens, measured(462.0));
+    }
+
+    #[test]
+    fn no_context_before_the_first_successful_call() {
+        let log = RunLog::new();
+        assert_eq!(log.context_summary(), None);
+        assert_eq!(
+            record(&log).usage.peak_context_tokens,
+            Metric::unavailable()
+        );
+    }
+
+    #[test]
+    fn formats_thousands() {
+        assert_eq!(thousands(0), "0");
+        assert_eq!(thousands(999), "999");
+        assert_eq!(thousands(4591), "4,591");
+        assert_eq!(thousands(1_000_000), "1,000,000");
     }
 }

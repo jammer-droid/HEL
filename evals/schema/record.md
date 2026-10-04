@@ -69,6 +69,11 @@ collector가 run 하나마다 만드는 `results/<lab>/<run-id>/record.json`의 
 | `usage.output_tokens` | metric | v0 | run 전체의 출력 token 합 (reasoning token 포함 여부는 availability.md에 기록) |
 | `usage.model_calls` | metric | v0 | run 동안의 model API 호출 수 |
 | `usage.wall_time_ms` | metric | v0 | run 시작부터 종료까지 걸린 시간 |
+| `usage.cached_input_tokens` | metric | v0 확장 (H5) | `input_tokens` 중 provider의 prompt cache에서 처리된 token 합. **이유**: cache hit 비율과 비용 비교 (H5·H6). 없으면 `unavailable` |
+| `usage.peak_context_tokens` | metric | v0 확장 (H5) | 성공한 호출 중 가장 큰 단일 요청 input. run이 한 번에 쓴 최대 context. 없으면 `unavailable` |
+| `usage.last_context_tokens` | metric | v0 확장 (H5) | 마지막 성공 호출의 input. run이 끝났을 때의 context 크기. 없으면 `unavailable` |
+
+H5 확장 필드 세 개는 선택 필드다. 이전 record에는 없으며, 읽을 때 `unavailable`로 본다. 호출별 값은 record에 넣지 않고 raw log에 둔다(`evals report`가 Runs 절에 호출별 context와 cache hit를 표시).
 
 ### `events` — tool 호출
 

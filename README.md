@@ -34,7 +34,8 @@ harness 구현은 바이브 코딩으로 진행한다. 코드를 작성하는 �
 | [`h03`](https://github.com/jammer-droid/HEL/tree/h03) | H2 완료 상태. `hel`에 `write_file`, `search_replace` tool(`--tools`로 선택) |
 | [`h04`](https://github.com/jammer-droid/HEL/tree/h04) | H3 완료 상태. `hel`이 실행 환경 정보와 작업 디렉터리의 `HEL.md`를 system message로 보냄(`--no-env`, `--no-context-file`로 끔) |
 | [`h05`](https://github.com/jammer-droid/HEL/tree/h05) | H4 완료 상태 |
-| `h06` *(예정)* | H5 완료 상태 |
+| [`h06`](https://github.com/jammer-droid/HEL/tree/h06) | H5 완료 상태 |
+| `h07` *(예정)* | H6 완료 상태 |
 
 ```bash
 git clone https://github.com/jammer-droid/HEL.git
@@ -83,7 +84,7 @@ cargo install --path crates/hel --target-dir target
 hel
 ```
 
-옵션 없이 실행하면 대화형으로 실행된다. 한 줄씩 입력하면 앞의 대화와 함께 model에게 보내고, `/exit`나 Ctrl-D로 끝낸다. tool 호출은 `[tool]` 줄로 표시된다.
+옵션 없이 실행하면 대화형으로 실행된다. 한 줄씩 입력하면 앞의 대화와 함께 model에게 보내고, `/exit`나 Ctrl-D로 끝낸다. tool 호출은 `[tool]` 줄로, 입력 하나가 끝날 때의 context 크기와 cache hit는 `[context: N tokens · cache hit M (P%)]` 줄로 표시된다.
 
 ```bash
 hel --instruction "Read the file hello.txt and print its contents exactly as they are."
