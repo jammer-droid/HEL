@@ -1,7 +1,7 @@
-//! Lab files, experiment manifests and task specs (evals/SPEC.md §4, §8).
+//! Lab files and task specs (evals/SPEC.md §4, §8).
 //!
-//! Both a public Lab file (`evals/labs/<lab>.yaml`) and an internal experiment manifest
-//! (`*.yaml` path with `experiment` and `artifacts.results`) are read into one [`Plan`].
+//! A Lab file (`evals/labs/<lab>.yaml`) is the only measurement definition; it is read into a
+//! [`Plan`].
 
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -15,10 +15,10 @@ use serde_json::Value;
 /// What `evals run` / `evals report` work on.
 #[derive(Debug)]
 pub struct Plan {
-    /// Experiment ID written into records. For a Lab file this is the Lab ID.
+    /// Experiment ID written into records: the Lab ID, or `<lab>-r<N>` from revision 2 on.
     pub experiment: String,
     pub lab: String,
-    pub model: ManifestModel,
+    pub model: LabModel,
     pub conditions: Vec<Condition>,
     pub tasks: Vec<String>,
     pub repetitions: u32,
@@ -30,7 +30,10 @@ pub struct Plan {
 #[derive(Debug, Deserialize)]
 struct LabFile {
     lab: String,
-    model: ManifestModel,
+    /// Bumped when a Lab is measured again with changed conditions; keeps earlier runs apart.
+    #[serde(default = "first_revision")]
+    revision: u32,
+    model: LabModel,
     budget: Budget,
     conditions: Vec<Condition>,
     tasks: Vec<String>,
@@ -39,20 +42,8 @@ struct LabFile {
     rubric: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct Manifest {
-    experiment: String,
-    lab: String,
-    model: ManifestModel,
-    conditions: Vec<Condition>,
-    tasks: Vec<String>,
-    repetitions: u32,
-    budget: Budget,
-    artifacts: ManifestArtifacts,
-}
-
 #[derive(Debug, Clone, Deserialize)]
-pub struct ManifestModel {
+pub struct LabModel {
     pub provider: String,
     pub id: String,
     #[serde(default = "empty_object")]
@@ -68,11 +59,6 @@ pub struct Condition {
     pub optional: bool,
     #[serde(default)]
     pub settings: Value,
-}
-
-#[derive(Debug, Deserialize)]
-struct ManifestArtifacts {
-    results: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
@@ -112,12 +98,13 @@ fn empty_object() -> Value {
     Value::Object(Default::default())
 }
 
-/// Resolves `target` to a plan: a `.yaml` path, a Lab ID, or (when `None`) the latest Lab.
+fn first_revision() -> u32 {
+    1
+}
+
+/// Resolves `target` to a plan: a Lab ID, or (when `None`) the latest Lab.
 pub fn load_plan(root: &Path, target: Option<&str>) -> Result<Plan, Box<dyn Error>> {
     match target {
-        Some(path) if path.ends_with(".yaml") || path.ends_with(".yml") => {
-            load_manifest(Path::new(path))
-        }
         Some(lab) => load_lab(root, lab),
         None => load_lab(root, &latest_lab(root)?),
     }
@@ -153,8 +140,15 @@ pub fn load_lab(root: &Path, lab: &str) -> Result<Plan, Box<dyn Error>> {
         )
         .into());
     }
+    if file.revision == 0 {
+        return Err(format!("{}: revision starts at 1", path.display()).into());
+    }
+    let experiment = match file.revision {
+        1 => file.lab.clone(),
+        n => format!("{}-r{n}", file.lab),
+    };
     Ok(Plan {
-        experiment: file.lab.clone(),
+        experiment,
         results: PathBuf::from("results").join(&file.lab),
         lab: file.lab,
         model: file.model,
@@ -163,23 +157,6 @@ pub fn load_lab(root: &Path, lab: &str) -> Result<Plan, Box<dyn Error>> {
         repetitions: file.repetitions,
         budget: file.budget,
         rubric: file.rubric,
-    })
-}
-
-fn load_manifest(path: &Path) -> Result<Plan, Box<dyn Error>> {
-    let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let file: Manifest =
-        serde_yaml_ng::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
-    Ok(Plan {
-        experiment: file.experiment,
-        lab: file.lab,
-        model: file.model,
-        conditions: file.conditions,
-        tasks: file.tasks,
-        repetitions: file.repetitions,
-        budget: file.budget,
-        results: file.artifacts.results,
-        rubric: BTreeMap::new(),
     })
 }
 

@@ -14,7 +14,8 @@
 
 - [H0 Hello Harness](labs/h00-hello-harness/README.md)
     - [FAQ](labs/h00-hello-harness/faq.md)
-- [대화형 기본 틀]()
+- [대화형 기본 틀](labs/interactive-cli/README.md)
+    - [FAQ](labs/interactive-cli/faq.md)
 - [H1 Tool Loop]()
 - [H2 Editing]()
 

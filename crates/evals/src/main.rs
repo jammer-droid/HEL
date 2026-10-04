@@ -1,8 +1,8 @@
 //! evals — try, run and report Lab experiments (evals/SPEC.md §8).
 //!
 //!   evals try <task> [--lab <lab>] [--harness <name>] [--instruction <text>] [--fixture <dir>]
-//!   evals run [lab | manifest.yaml] [--conditions a,b] [--force]
-//!   evals report [lab | manifest.yaml]
+//!   evals run [lab] [--conditions a,b] [--force]
+//!   evals report [lab]
 //!
 //! Works from any directory inside the HarnessEngineeringLab repository. A Lab is given by its
 //! ID (`h00` → evals/labs/h00.yaml) and defaults to the latest Lab; a task by its ID
@@ -22,8 +22,8 @@ use std::process::ExitCode;
 
 const USAGE: &str = "usage:
   evals try <task> [--lab <lab>] [--harness hel|claude-code] [--instruction <text>] [--fixture <dir>] [--build]
-  evals run [lab | manifest.yaml] [--conditions a,b] [--force] [--build]
-  evals report [lab | manifest.yaml]
+  evals run [lab] [--conditions a,b] [--force] [--build]
+  evals report [lab]
 
 hel: uses the installed `hel` on PATH if present, otherwise builds crates/hel.
 --build always builds and runs the working tree.";
@@ -48,7 +48,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let root = find_root()?;
     let root = root.as_path();
 
-    // First positional argument (task ID, Lab ID or manifest path), then flags.
+    // First positional argument (task ID or Lab ID), then flags.
     let target = match args.peek() {
         Some(arg) if !arg.starts_with("--") => args.next(),
         _ => None,

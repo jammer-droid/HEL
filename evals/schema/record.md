@@ -29,7 +29,7 @@ collector가 run 하나마다 만드는 `results/<lab>/<run-id>/record.json`의 
 | 필드 | 타입 | 도입 | 설명 |
 | --- | --- | --- | --- |
 | `run.run_id` | string | v0 | `<experiment-id>-<task-id>-<condition>-<rep>` |
-| `run.experiment_id` | string | v0 | manifest의 `experiment` |
+| `run.experiment_id` | string | v0 | Lab 정의의 Lab ID. `revision`이 2 이상이면 `<lab>-r<N>` |
 | `run.lab` | string | v0 | `hXX` |
 | `run.task_id` | string | v0 | `evals/tasks/<task-id>` |
 | `run.condition` | string | v0 | `baseline` / `variant` / `external-<harness>` |
@@ -49,7 +49,7 @@ collector가 run 하나마다 만드는 `results/<lab>/<run-id>/record.json`의 
 | 필드 | 타입 | 도입 | 설명 |
 | --- | --- | --- | --- |
 | `model.provider` | string | v0 | 예: `deepseek` |
-| `model.requested` | string | v0 | manifest에서 요청한 model ID |
+| `model.requested` | string | v0 | Lab 정의에서 요청한 model ID |
 | `model.actual` | string \| null | v0 | 응답에서 확인한 실제 model 이름. 요청과 다르면 run은 invalid. **이유**: provider 쪽 별칭이 다른 model로 바뀌는 것을 감지 (H0) |
 | `model.params` | object | v0 | reasoning 등 실제로 보낸 설정 |
 

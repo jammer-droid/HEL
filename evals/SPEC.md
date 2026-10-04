@@ -184,11 +184,11 @@ checker의 출력이다.
 
 ### 7.6 설정 일치 기록
 
-reasoning/effort 수준, 허용한 tool 목록, system prompt 수정 여부를 manifest의 condition별 `settings`에 기록한다. 완전히 같게 맞출 수 없는 항목은 차이를 기록하고 결론을 그만큼 제한한다.
+reasoning/effort 수준, 허용한 tool 목록, system prompt 수정 여부를 Lab 정의의 condition별 `settings`에 기록한다. 완전히 같게 맞출 수 없는 항목은 차이를 기록하고 결론을 그만큼 제한한다.
 
 ### 7.7 실제 model 확인
 
-`model.actual`이 manifest의 model과 다르면 collector는 `validity.valid: false`와 사유를 기록한다. 해당 run은 집계에서 제외하지만 삭제하지 않는다.
+`model.actual`이 Lab 정의의 model과 다르면 collector는 `validity.valid: false`와 사유를 기록한다. 해당 run은 집계에서 제외하지만 삭제하지 않는다.
 
 ### 7.8 적합성 판정
 
@@ -197,7 +197,7 @@ reasoning/effort 수준, 허용한 tool 목록, system prompt 수정 여부를 m
 
 ### 7.9 상태 단계
 
-`draft`(PROFILE 작성) → `conformant`(§7.8 통과) → `active`(실험에 사용). `conformant` 이상만 manifest의 condition에 넣을 수 있다.
+`draft`(PROFILE 작성) → `conformant`(§7.8 통과) → `active`(실험에 사용). `conformant` 이상만 Lab 정의의 condition에 넣을 수 있다.
 
 ---
 
@@ -205,27 +205,28 @@ reasoning/effort 수준, 허용한 tool 목록, system prompt 수정 여부를 m
 
 ### 8.1 Lab 정의 파일
 
-`evals/labs/<lab>.yaml`은 공개 저장소에도 제공하는 Lab 단위 실험 정의다. Lab ID(`h00`)는 파일 이름과 파일 안의 `lab:`이 같아야 한다.
+`evals/labs/<lab>.yaml`은 Lab의 유일한 측정 정의다. Lab ID(`h00`)는 파일 이름과 파일 안의 `lab:`이 같아야 한다. 측정을 시작하기 전에 확정해 commit하고, 결과를 본 뒤 바꾸면 그 이유를 기록한다.
 
 | 필드 | 내용 |
 | --- | --- |
 | `lab`, `title`, `description` | Lab ID와 설명 |
+| `revision` | 생략하면 1. 조건을 바꿔 다시 측정할 때 올린다. experiment ID가 `<lab>`(1) 또는 `<lab>-r<N>`(2 이상)이 되어 이전 run과 섞이지 않는다 |
 | `model`, `budget` | 기본 model(provider, id, params)과 budget(max_turns, timeout_seconds, max_output_tokens) |
 | `conditions` | 비교 조건. `optional: true`이면 harness가 설치되지 않았을 때 건너뛴다 |
 | `tasks`, `repetitions` | test set(task ID 목록)과 반복 횟수 |
 | `rubric` | 채점 기준 설명. 실제 판정은 각 `task.yaml`의 checks가 한다 |
 
-Lab 정의 대신 실험 manifest 파일(`*.yaml` 경로)을 줄 수도 있다. manifest는 Lab 정의의 필드에 `experiment`(experiment ID)와 `artifacts.results`(결과 폴더)를 더한 형식이다.
+결과는 `results/<lab>/`에 쌓인다.
 
 ### 8.2 명령
 
-`evals`는 저장소 안 어느 폴더에서 실행해도 위로 올라가며 저장소 루트(`evals/SPEC.md`가 있는 곳)를 찾는다. Lab은 ID로 지정하고, 생략하면 `evals/labs/`에서 가장 큰 번호의 Lab을 쓴다. `.yaml` 경로를 주면 그 manifest를 쓴다.
+`evals`는 저장소 안 어느 폴더에서 실행해도 위로 올라가며 저장소 루트(`evals/SPEC.md`가 있는 곳)를 찾는다. Lab은 ID로 지정하고, 생략하면 `evals/labs/`에서 가장 큰 번호의 Lab을 쓴다.
 
 | 명령 | 하는 일 | API 호출 | 결과 위치 |
 | --- | --- | --- | --- |
 | `evals try <task> [--lab] [--harness] [--instruction] [--fixture] [--build]` | task 하나를 1회 실행하고 입력, tool 호출, 출력, check, usage를 터미널에 보여준다 | 1회 | `results/try/` |
-| `evals run [lab \| manifest] [--conditions a,b] [--force] [--build]` | condition × task × repetition 실행 후 판정, report | 있음 | `results/<lab>/<run-id>/`, `report.md` |
-| `evals report [lab \| manifest]` | 이미 있는 run을 다시 형식 검사, 판정하고 report를 쓴다 | 없음 | `report.md`, run별 `verdict.json` |
+| `evals run [lab] [--conditions a,b] [--force] [--build]` | condition × task × repetition 실행 후 판정, report | 있음 | `results/<lab>/<run-id>/`, `report.md` |
+| `evals report [lab]` | 이미 있는 run을 다시 형식 검사, 판정하고 report를 쓴다 | 없음 | `report.md`, run별 `verdict.json` |
 
 `try`의 기본값:
 

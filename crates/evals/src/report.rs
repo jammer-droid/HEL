@@ -33,7 +33,7 @@ pub fn write(root: &Path, plan: &Plan, checked: &Checked) -> Result<(), Box<dyn 
         );
         if !checked.other_experiments.is_empty() {
             println!(
-                "      other experiments there: {} (pass the manifest path to report them)",
+                "      other experiments there: {} (not included)",
                 checked.other_experiments.join(", ")
             );
         }

@@ -1,6 +1,6 @@
 # Lab 정의. evals try / run / report가 Lab ID(h00)로 이 파일을 찾는다.
 lab: h00
-title: Minimal Agent
+title: Hello Harness
 description: >
   Compare a single model call with a model-tool loop that has one read_file tool.
 

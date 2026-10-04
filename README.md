@@ -4,6 +4,8 @@
 
 coding agent의 harness를 Rust로 직접 만들고, 각 설계 선택이 무엇을 바꾸는지 실험으로 확인하는 학습 프로젝트다. 작업 결과는 코드, 실험 기록, 학습 가이드로 남긴다.
 
+harness 구현은 바이브 코딩으로 진행한다. 코드를 작성하는 것보다 harness가 어떻게 작동하는지 확인하는 것이 더 중요하기 때문이다.
+
 학습 가이드: <https://jammer-droid.github.io/HEL/>
 
 ## 구성
@@ -27,7 +29,8 @@ coding agent의 harness를 Rust로 직접 만들고, 각 설계 선택이 무엇
 | tag | 내용 |
 | --- | --- |
 | [`h00`](https://github.com/jammer-droid/HEL/tree/h00) | 기록 형식(`record`), 측정 도구(`evals`), H0 가이드. `hel`은 없다 |
-| `h01` *(예정)* | H0 완료 상태 |
+| [`h01`](https://github.com/jammer-droid/HEL/tree/h01) | H0 완료 상태. `hel`(agent loop, `read_file`, 대화형 모드) |
+| `h02` *(예정)* | H1 완료 상태 |
 
 ```bash
 git clone https://github.com/jammer-droid/HEL.git
