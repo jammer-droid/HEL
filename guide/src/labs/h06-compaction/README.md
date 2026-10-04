@@ -143,9 +143,112 @@ pub fn before_request(messages: &mut Vec<Value>, policy: &Policy, meter: &mut Me
 }
 ```
 
-(설명을 위해 오류 처리를 줄였다.) `summary_request`는 대화의 앞부분을 바꾸지 않고 그대로 보낸 뒤 마지막에 요약 지시만 붙인다. tool 정의도 대화 요청과 같게 보낸다. 앞부분이 직전 요청과 같으므로 요약 요청은 cache hit에 성공할 수 있다. 요약 지시는 DeepSeek Harness의 것을 따라, 요청과 의도, 파일과 코드, 남은 일, 현재 작업, 다음 단계 같은 절로 나눠 쓰게 하고 사용자가 다시 물을 수 있는 값은 그대로 남기라고 한다.
+(설명을 위해 오류 처리를 줄였다.) 압축 한 번은 다음 네 단계로 진행된다. 숫자는 §3의 첫 번째 실행에서 처음 압축이 일어났을 때의 기록이다.
 
-`tail_start`는 최근 구간이 tool 결과로 시작하지 않게 경계를 고른다. tool 결과 앞에 그 결과를 만든 tool 호출이 없으면 요청 형식이 맞지 않는다. 요약 요청은 raw log에 `purpose: compaction`으로 남고, 실행 기록의 비용(input, output, cache hit)에는 들어가지만 context 크기(`peak_context_tokens`, `last_context_tokens`)에는 들어가지 않는다.
+**① 원문으로 남길 구간 고르기.** 대화 기록은 메시지의 목록이고, 메시지마다 누가 만든 것인지(`role`)가 붙어 있다.
+
+| role | 만드는 쪽 | 예 |
+| --- | --- | --- |
+| system | `hel` | 실행 환경(OS, shell, 작업 디렉터리) |
+| user | 사용자 | "alpha 파일을 읽고 port만 답하라" |
+| assistant | model의 응답 | tool 호출(`cat services/alpha.toml`) 또는 답(`7310`) |
+| tool | `hel`이 tool을 실행한 결과 | alpha 파일 내용 |
+
+model이 tool을 부르면 assistant 메시지에 호출마다 `id`가 붙고, `hel`은 실행 결과를 tool 메시지로 돌려주며 어느 호출의 결과인지 그 `id`를 적는다. 그래서 tool 메시지는 항상 자기를 부른 assistant 메시지 바로 뒤에 짝으로 붙어 있다. 첫 압축 직전의 기록은 다음과 같았다.
+
+```text
+ 0  system     실행 환경
+ 1  user       alpha 읽어라
+ 2  assistant  호출 call_A (cat alpha)
+ 3  tool       call_A 결과: alpha 파일 내용
+ 4  assistant  답: 7310
+ 5  user       bravo 읽어라
+ 6  assistant  호출 call_B (cat bravo)
+ 7  tool       call_B 결과: bravo 파일 내용
+ 8  assistant  답: 7420
+ 9  user       charlie 읽어라
+10  assistant  호출 call_C (cat charlie)
+11  tool       call_C 결과: charlie 파일 내용     ← 대화의 맨 끝
+```
+
+압축은 이 목록을 한 위치에서 둘로 나눠, 앞쪽(1번부터)은 요약으로 바꾸고 뒤쪽은 원문으로 둔다. `tail_start`는 맨 끝에서부터 거슬러 올라가며 메시지 크기를 더하고, `--keep-recent` 안에 들어오는 범위에서 나눌 위치를 고른다. 이때 나눌 위치는 user나 assistant 메시지(10, 9, 8, …)에서만 고르고, tool 메시지(11, 7, 3)는 후보에서 뺀다. 호출과 결과의 짝이 요약 쪽과 원문 쪽으로 갈라지지 않게 하기 위해서다.
+
+- 11에서 나누면 1~10이 요약으로 바뀌고 원문에는 `call_C 결과`만 남는다. 그 결과를 만든 10번 호출이 요약 속으로 사라져, model과 API가 보기에는 하지 않은 호출의 결과가 들어온 셈이 되고 요청 형식이 깨진다.
+- 10에서 나누면 1~9가 요약이 되고 원문에는 10번 호출과 11번 결과가 함께 남는다. 실제 압축은 이 위치에서 나눴다.
+
+**② 요약 요청 보내기.** `summary_request`는 요약할 구간을 다시 쓰지 않고 대화에 있던 그대로 보내고, 마지막에 요약 지시를 user 메시지로 붙인다. tool 정의도 대화 요청과 같게 넣는다. 그래서 요약 요청의 앞부분은 직전 대화 요청과 같고, input 3,720 token 중 3,456 token이 cache hit에 성공했다.
+
+```text
+직전 대화 요청:  [system·tool 정의] [user: alpha] ... [user: charlie]
+요약 요청:      [system·tool 정의] [user: alpha] ... [user: charlie] [user: 요약 지시]
+```
+
+요약의 형식은 `hel`이 이 지시문으로 정해 준다. DeepSeek Harness의 지시를 줄여 쓴 것으로, 절 제목과 규칙을 적어 두었다.
+
+```text
+Output EXACTLY the Markdown structure below: keep every section, in order. ...
+
+## Primary Request and Intent
+## Files and Code
+## Errors and Fixes
+## Pending Jobs
+## Current Work
+## Next Step
+## Critical Context
+
+Rules:
+- Preserve exact file paths, commands, identifiers, numeric values and every value the user was
+  told or may ask about again.
+- Do NOT mention this summarization request or that the context was compacted.
+- Output only the checkpoint text: do not call any tool.
+...
+```
+
+(지시문 일부를 옮겼다.)
+
+**③ 요약이 도착하는 형식.** 요약 요청의 응답은 대화 요청과 같은 Chat Completions 응답으로 온다. 요약 글은 `content`에 Markdown 문자열로 들어 있다.
+
+```json
+{
+  "choices": [{
+    "finish_reason": "stop",
+    "message": {
+      "role": "assistant",
+      "reasoning_content": "",
+      "content": "## Primary Request and Intent\n- User requests reading TOML config files ...\n\n## Files and Code\n- `services/alpha.toml` — `[service]` section: ... `port = 7310`, `owner = \"mira\"` ..."
+    }
+  }],
+  "usage": { "prompt_tokens": 3720, "prompt_cache_hit_tokens": 3456, "completion_tokens": 480 }
+}
+```
+
+(긴 문자열과 일부 필드를 줄였다.) 절 제목은 지시문에서 정해 준 것이고, 각 절 아래의 내용은 model이 대화를 읽고 쓴 것이다. 위의 Files and Code 절에 port와 owner를 적은 것도 model의 판단이다. `hel`은 이 응답에서 네 가지만 확인한다. tool 호출이 섞였는지, 출력 한도에 걸려 잘렸는지(`finish_reason: length`), 비어 있는지, 요약이 원래 구간보다 긴지다. 하나라도 해당하면 요약을 버리고 기록을 그대로 둔다. 절 제목이 모두 있는지는 확인하지 않으므로, model이 형식을 어기면 어긴 요약이 그대로 쓰인다. 이번 측정의 요약 5번은 모두 지시한 절을 지켰다.
+
+**④ 다음 요청에 넣기.** 확인을 통과한 요약은 앞에 안내문을 붙이고 `<compacted-summary>` 태그로 감싸 user 메시지 하나로 만든다. 이 메시지가 요약할 구간 자리에 들어간다.
+
+```text
+This is an automatically generated checkpoint condensing an earlier span of the conversation
+to free up context. ... Continue the task directly from the messages that follow, without
+acknowledging this checkpoint.
+
+<compacted-summary>
+## Primary Request and Intent
+...
+</compacted-summary>
+```
+
+그 뒤 대화 요청(요청 6)은 다음 네 메시지로 보낸다.
+
+| 순서 | 메시지 | 글자 수 |
+| --- | --- | --- |
+| 1 | system (실행 환경) | 211 |
+| 2 | user: 안내문 + `<compacted-summary>` 요약 | 1,903 |
+| 3 | assistant: `cat services/charlie.toml` 호출 | |
+| 4 | tool: charlie 파일 내용 | 6,085 |
+
+model은 이 요청을 받고 `7530`으로 답했다. 요청 6의 input은 2,415 token이었고, cache hit는 system과 tool 정의에 해당하는 384 token뿐이었다. 2번 메시지부터는 처음 보내는 내용이기 때문이다. 다음 요청부터는 이 요청 뒤에 대화가 덧붙으므로 다시 cache hit에 성공한다(§3).
+
+요약 요청은 raw log에 `purpose: compaction`으로 남는다. 실행 기록의 비용(input, output, cache hit)에는 들어가지만 context 크기(`peak_context_tokens`, `last_context_tokens`)에는 들어가지 않는다. 요약 요청의 input(3,720)은 대화 요청 중 가장 컸던 요청 5(3,514)보다 크지만, 대화가 window를 얼마나 차지했는지와는 다른 값이기 때문이다.
 
 같은 방식으로, 12,500 token을 넘는 tool 결과는 처음 들어올 때 파일로 저장하고 앞·뒤와 파일 경로만 대화에 넣는다. 이번 작업의 파일은 6KB 정도라 이 저장과 1번의 자르기는 일어나지 않았다.
 
@@ -244,7 +347,7 @@ xychart-beta
 
 ### 트레이드오프
 
-압축은 model을 한 번 더 부르는 일이다. 이번 세션에서 요약 한 번의 출력은 480~768 token이었고, 압축 직후 요청은 요약과 최근 구간 전체를 다시 계산했다. 자주 압축하면 이 비용이 역시 함께 고려를 해야한다. 기본 기준(800K)에서는 지금까지의 작업 규모에서 압축이 일어나지 않으므로, 실제 window 근처에서 압축이 얼마나 자주 일어나고 얼마를 아끼는지는 측정할 수 없었다.
+압축은 model을 한 번 더 부르는 일이다. 이번 세션에서 요약 한 번의 출력은 480~768 token이었고, 압축 직후 요청은 요약과 최근 구간 전체를 다시 계산했다. 자주 압축하면 이 비용 역시 함께 고려를 해야한다. 기본 기준(800K)에서는 지금까지의 작업 규모에서 압축이 일어나지 않으므로, 실제 window 근처에서 압축이 얼마나 자주 일어나고 얼마를 아끼는지는 측정할 수 없었다.
 
 요약의 내용은 model이 정한다. 이번 요약에는 필요한 port와 owner가 모두 남았지만, system prompt에 있던 작업 디렉터리 경로와 shell 정보도 다시 적혀 같은 내용이 두 번 들어갔다. 크기 추정은 글자 수를 4로 나누는 방식이라 한국어처럼 글자당 token이 많은 내용은 적게 추정한다. DeepSeek Harness도 같은 한계를 문서에 적어 두었다.
 
