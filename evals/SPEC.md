@@ -91,6 +91,7 @@ checks:
 | `output_exact_match` | `outcome.final_output`이 `expected_file` 내용과 같다 | 양쪽 끝의 **줄바꿈 한 개**만 제거하고 비교한다. 그 외 공백 정리, code fence 제거 등은 하지 않는다 |
 | `file_exact_match` | run이 끝난 뒤 작업 디렉터리의 `path` 파일이 `expected_file` 내용과 같다 (eval-v2) | runner가 run 종료 시 작업 디렉터리를 `workspace/`에 복사하고 그 사본을 읽는다. 줄바꿈 규칙은 `output_exact_match`와 같다. 파일이 없으면 fail |
 | `tool_calls` | `events` 중 `category`가 일치하는 호출이 정확히 `count`회이고, `path`가 있으면 그 호출들의 대상 경로가 모두 `path`로 resolve된다 | 대상 경로는 `args.path` 또는 `args.file_path`. 상대/절대 모두 작업 디렉터리 기준으로 정규화해 비교한다 |
+| `ini_value` | run이 끝난 뒤 작업 디렉터리의 `path` INI 파일에서 `[section]`의 `key` 값이 `value`와 같다 (eval-v3) | `workspace/` 사본을 읽는다. 키와 값의 앞뒤 공백, 빈 줄, `;`·`#` 주석 줄, 공백 뒤 inline 주석은 무시한다. `=` 주변 공백, 키 순서 같은 서식은 비교하지 않는다. 같은 섹션에 키가 여러 번 있으면 마지막 값. 파일이나 키가 없으면 fail |
 
 - `not_applicable`에 적힌 condition에서는 해당 check 결과를 `n/a`로 기록한다.
 - check 종류를 추가할 때는 이 표와 eval version을 갱신한다.
@@ -262,3 +263,4 @@ reasoning/effort 수준, 허용한 tool 목록, system prompt 수정 여부를 L
 | eval-v0 | H0. task `read-echo-01`. check `output_exact_match`, `tool_calls`. record-v0, verdict-v0 |
 | eval-v1 | H1. task `path-echo-01`, `find-echo-01` 추가. 조건 이름 `variant-<name>` 허용(record-v0 호환 확장), hel 조건의 `settings.tools` → `--tools`, `evals try --condition`, report에 tool 호출 수와 run별 tool 호출 |
 | eval-v2 | H2. task `edit-line-01`, `edit-ambiguous-01`, `write-new-01`(보조 확인용, h02 Lab 정의 밖) 추가. check `file_exact_match`, run 폴더에 `workspace/`(작업 디렉터리 사본). record·verdict 형식 변경 없음 |
+| eval-v3 | H3. task `env-checksum-01`, `rule-config-01` 추가. check `ini_value`. hel 조건의 `settings.env` → `--env`, `settings.context_file` → `--context-file`. hel 실행 PATH를 `/usr/bin:/bin:/usr/sbin:/sbin`으로 변경(Claude Code driver와 같게. 이전 `/usr/bin:/bin`). H3 Adopt 후 `settings.env: false` → `--no-env`, `settings.context_file: false` → `--no-context-file` 추가(hel 기본값이 켜짐으로 바뀜). record·verdict 형식 변경 없음 |

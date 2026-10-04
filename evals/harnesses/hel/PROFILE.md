@@ -12,15 +12,19 @@
 ## 실행 규약
 
 ```text
-hel --instruction <TEXT> [--tools <a,b>] [--context <run-context.json> --record <record.json>]
+hel --instruction <TEXT> [--tools <a,b>] [--env | --no-env] [--context-file <name> | --no-context-file] [--context <run-context.json> --record <record.json>]
 ```
 
 - `--tools`: model에게 줄 tool 목록(쉼표 구분). 없으면 `hel`의 기본 tool 구성을 쓴다(H0·`h01`: `read_file`, H1부터: `bash`). 측정 조건은 기본값에 기대지 않고 `settings.tools`로 명시한다. Lab 정의의 hel 조건에 `settings.tools`가 있으면 runner가 이 인자로 넘긴다. H1에서 추가(`h01`의 `hel`에는 없다. baseline 조건에는 `settings.tools`를 두지 않는다).
+- `--env` / `--no-env`: 실행 환경 정보(OS, shell, 작업 디렉터리)를 system message로 보낼지. H3에서 추가했고 H3 Adopt 이후 기본으로 보낸다(`h03`의 `hel`에는 없고 system message도 없다). Lab 정의의 `settings.env: true`/`false`가 이 플래그가 된다.
+- `--context-file <name>` / `--no-context-file`: 작업 디렉터리의 context 파일(기본 `HEL.md`)이 있으면 그 내용을 system message에 붙인다. 상위 디렉터리는 찾지 않는다. H3에서 추가했고 H3 Adopt 이후 기본으로 `HEL.md`를 읽는다. Lab 정의의 `settings.context_file: <name>`/`false`가 이 인자가 된다.
+- H4부터 baseline 조건(설정 없음)은 환경 정보와 `HEL.md`를 보내는 `hel`이다. `h03` 코드와 같게 측정하려면 `settings: {env: false, context_file: false}`를 준다.
 
 - 작업 디렉터리(cwd)는 runner가 만든 task fixture 복사본이다. 파일을 읽는 tool은 이 디렉터리 밖을 읽지 않는다.
 - `--context`: runner가 쓰는 `record::RunContext`(run 정보, harness 버전, model, budget).
 - `--record`: record-v0을 쓰고, 같은 디렉터리의 `raw/requests.jsonl`에 요청과 응답 본문을 남긴다(인증 header 제외).
 - `harness.version`: `crates/hel`, `crates/record`를 마지막으로 바꾼 commit. 수정 중이면 `-dirty`, 설치된 `hel`이 소스보다 오래되었으면 `-stale`.
+- `evals`는 `hel`을 환경 변수를 비우고 `PATH=/usr/bin:/bin:/usr/sbin:/sbin`과 `DEEPSEEK_API_KEY`만 주어 실행한다(Claude Code driver와 같은 PATH. eval-v3 이전에는 `/usr/bin:/bin`이라 macOS `/sbin`의 `md5`, `md5sum`을 찾지 못했다).
 - `evals`는 PATH에 설치된 `hel`을 우선 사용하고, 없거나 `--build`이면 작업 폴더를 빌드해 쓴다.
 
 ## Tool → category 매핑

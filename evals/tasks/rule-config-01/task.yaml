@@ -1,0 +1,17 @@
+id: rule-config-01
+eval_version: eval-v3
+description: 설정값 하나를 바꾼다 (H3). 어느 파일을 고쳐야 하는지는 작업 디렉터리의 HEL.md에만 적혀 있다(default.ini는 고치지 않고 local.ini에 쓴다)
+instruction: >
+  Set cache_ttl to 300.
+fixture: fixture/
+checks:
+  - id: default-unchanged
+    type: file_exact_match
+    path: config/default.ini
+    expected_file: expected/default.ini
+  - id: local-value
+    type: ini_value
+    path: config/local.ini
+    section: cache
+    key: cache_ttl
+    value: "300"

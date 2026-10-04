@@ -1,0 +1,49 @@
+# Lab 정의. evals try / run / report가 Lab ID(h03)로 이 파일을 찾는다.
+lab: h03
+title: Repository Context
+revision: 2               # 2: hel 실행 PATH에 /usr/sbin:/sbin 추가(eval-v3) 후 다시 측정. revision 1 run은 PATH=/usr/bin:/bin
+description: >
+  Compare a hel that sends no system message with a hel that sends the execution environment
+  (OS, shell, working directory) as a system message, and with one that also appends HEL.md
+  from the working directory, on a regular edit, a checksum task whose usual command differs
+  by OS, and a config change whose rule is written only in HEL.md.
+
+model:                     # H0–H2와 같게 유지한다
+  provider: deepseek
+  id: deepseek-flash
+  params: {}               # thinking은 provider 기본값(켜짐)
+
+budget:                    # H2와 같다
+  max_turns: 10
+  timeout_seconds: 120
+  max_output_tokens: 8192
+
+conditions:                # evals run이 실행하는 비교 조건
+  - name: baseline         # 이 Lab을 시작한 상태(h03)의 hel. system message 없음, tool은 기본값 bash 하나. 코드를 고치기 전에 측정한다
+    harness: hel
+    settings:              # H3 Adopt 후 hel은 환경 정보와 HEL.md를 기본으로 보낸다. 이 조건을 다시 측정할 때도 시작 상태와 같도록 둘 다 끈다
+      env: false
+      context_file: false
+  - name: variant-env      # 이 Lab에서 만든 hel. 실행 환경 정보를 system message로 보낸다
+    harness: hel
+    settings:
+      env: true
+      context_file: false
+  - name: variant-env-hel  # 이 Lab에서 만든 hel. 실행 환경 정보에 작업 디렉터리의 HEL.md 내용을 붙인다
+    harness: hel
+    settings:
+      env: true
+      context_file: HEL.md
+
+tasks:
+  - edit-line-01           # H2 task. system message가 더하는 비용 확인
+  - env-checksum-01
+  - rule-config-01
+
+repetitions: 3
+
+rubric:                    # 채점 기준 설명. 실제 판정은 각 task.yaml의 checks가 한다
+  file-exact: After the run, the file in the working directory equals the expected file. Only one trailing newline on each side is ignored.
+  default-unchanged: config/default.ini is exactly as shipped (file-exact rule).
+  local-value: In config/local.ini, [cache] cache_ttl is 300. Spacing, blank lines and key order are not compared.
+  tool-use: Not a pass/fail check. The report lists tool calls per run and marks failed calls (bash exit code other than 0).

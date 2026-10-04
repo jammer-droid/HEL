@@ -1,0 +1,12 @@
+id: env-checksum-01
+eval_version: eval-v3
+description: 작은 파일의 MD5 값을 파일에 쓴다 (H3). 쓸 수 있는 명령이 실행 환경에 따라 다르다. evals는 hel을 PATH=/usr/bin:/bin으로 실행하므로 macOS의 /sbin/md5, /sbin/md5sum은 찾지 못하고 openssl, python3, shasum은 쓸 수 있다
+instruction: >
+  Write the MD5 checksum of data.txt to checksum.txt.
+  The file must contain only the 32-character lowercase hex digest.
+fixture: fixture/
+checks:
+  - id: file-exact
+    type: file_exact_match
+    path: checksum.txt
+    expected_file: expected/checksum.txt

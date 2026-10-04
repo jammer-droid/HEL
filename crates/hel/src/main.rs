@@ -3,11 +3,14 @@
 //! A model ↔ tool loop. The model is called repeatedly; each tool call it makes is executed and
 //! its result sent back, until the model answers without a tool call or the turn budget runs out.
 //! Tools: `bash`, `read_file` (H1), `write_file`, `search_replace` (H2); `--tools` chooses which
-//! ones the model gets (default: bash).
+//! ones the model gets (default: bash). A system message (H3) carries the execution environment
+//! and `HEL.md` from the working directory; `--no-env` and `--no-context-file` leave them out, and
+//! `--context-file <name>` reads another file instead of `HEL.md`.
 //!
 //! Usage:
-//!   hel [--tools <a,b>]
-//!   hel --instruction <TEXT> [--tools <a,b>] [--context <run-context.json> --record <record.json>]
+//!   hel [--tools <a,b>] [--no-env] [--context-file <name> | --no-context-file]
+//!   hel --instruction <TEXT> [--tools <a,b>] [--no-env] [--context-file <name> | --no-context-file]
+//!       [--context <run-context.json> --record <record.json>]
 //!
 //! Without `--instruction`, hel runs interactively: each line typed is sent to the model with the
 //! conversation so far. `--context` and `--record` are used by the eval runner. Without them, hel
@@ -15,6 +18,7 @@
 
 mod api;
 mod output;
+mod prompt;
 mod tools;
 
 use std::env;
@@ -36,6 +40,8 @@ use tools::Toolset;
 struct Args {
     instruction: Option<String>,
     tools: Toolset,
+    env: bool,
+    context_file: Option<String>,
     context: Option<PathBuf>,
     record: Option<PathBuf>,
 }
@@ -65,15 +71,17 @@ fn run() -> Result<(), Box<dyn Error>> {
         Duration::from_secs(ctx.budget.timeout_seconds),
     )?;
     let workdir = env::current_dir()?;
+    let system = prompt::system_message(args.env, args.context_file.as_deref(), &workdir);
     let Some(instruction) = &args.instruction else {
-        return chat(&client, &workdir, &args.tools, ctx.budget.max_turns);
+        return chat(&client, &workdir, &args.tools, system, ctx.budget.max_turns);
     };
 
     let started = SystemTime::now();
     let clock = Instant::now();
     let mut log = RunLog::new();
 
-    let mut messages = vec![json!({ "role": "user", "content": instruction })];
+    let mut messages: Vec<Value> = system.into_iter().collect();
+    messages.push(json!({ "role": "user", "content": instruction }));
     run_loop(
         &client,
         &workdir,
@@ -104,10 +112,11 @@ fn chat(
     client: &api::Client,
     workdir: &Path,
     tools: &Toolset,
+    system: Option<Value>,
     max_turns: u32,
 ) -> Result<(), Box<dyn Error>> {
     let stdin = io::stdin();
-    let mut messages = Vec::new();
+    let mut messages: Vec<Value> = system.into_iter().collect();
     eprintln!("hel — type /exit or press Ctrl-D to quit");
     loop {
         print!("> ");
@@ -221,6 +230,8 @@ fn run_loop(
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut instruction = None;
     let mut tools = None;
+    let mut env = true;
+    let mut context_file = Some(prompt::DEFAULT_CONTEXT_FILE.to_string());
     let mut context = None;
     let mut record = None;
     while let Some(flag) = args.next() {
@@ -232,6 +243,10 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
                 let names: Vec<&str> = list.split(',').collect();
                 tools = Some(Toolset::new(&names)?);
             }
+            "--env" => env = true,
+            "--no-env" => env = false,
+            "--context-file" => context_file = Some(value()?),
+            "--no-context-file" => context_file = None,
             "--context" => context = Some(PathBuf::from(value()?)),
             "--record" => record = Some(PathBuf::from(value()?)),
             other => return Err(format!("unknown argument: {other}")),
@@ -250,6 +265,8 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     Ok(Args {
         instruction,
         tools,
+        env,
+        context_file,
         context,
         record,
     })
@@ -320,5 +337,21 @@ mod tests {
     fn tools_flag_rejects_unknown_names() {
         let err = parse(&["--tools", "bash,grep"]).err().unwrap();
         assert!(err.contains("unknown tool: grep"), "{err}");
+    }
+
+    #[test]
+    fn env_is_on_by_default() {
+        assert!(parse(&[]).unwrap().env);
+        assert!(parse(&["--env"]).unwrap().env);
+        assert!(!parse(&["--no-env"]).unwrap().env);
+    }
+
+    #[test]
+    fn context_file_flag_takes_a_name() {
+        assert_eq!(parse(&[]).unwrap().context_file.as_deref(), Some("HEL.md"));
+        let args = parse(&["--context-file", "NOTES.md"]).unwrap();
+        assert_eq!(args.context_file.as_deref(), Some("NOTES.md"));
+        assert_eq!(parse(&["--no-context-file"]).unwrap().context_file, None);
+        assert!(parse(&["--context-file"]).is_err());
     }
 }

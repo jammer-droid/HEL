@@ -12,6 +12,7 @@
 
 # Part I — Foundations
 
+- [Part I 개요](parts/part1-foundations.md)
 - [H0 Hello Harness](labs/h00-hello-harness/README.md)
     - [FAQ](labs/h00-hello-harness/faq.md)
 - [대화형 도구의 기본 틀](labs/h0.5-interactive-cli/README.md)
@@ -23,7 +24,9 @@
 
 # Part II — Repository Intelligence
 
-- [H3 Repository Context]()
+- [Part II 개요](parts/part2-repository-intelligence.md)
+- [H3 Repository Context](labs/h03-repository-context/README.md)
+    - [FAQ](labs/h03-repository-context/faq.md)
 - [H4 Repository Search]()
 
 # Part III — Context

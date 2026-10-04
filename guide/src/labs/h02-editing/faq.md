@@ -18,4 +18,4 @@ model은 파일을 고친 뒤 거의 매번 결과를 다시 확인했다. 새 �
 
 ## macOS와 Linux의 명령 차이
 
-macOS의 `sed -i`, `cat -A`, `md5sum`은 Linux와 다르거나 없어서 bash 명령이 여러 번 실패했다. model은 오류를 보고 다른 명령으로 바꿨지만 호출이 늘었다. Mini-SWE-Agent는 시스템 prompt에 OS 정보와 macOS용 안내를 넣는다. 작업 환경 정보를 model에게 어떻게 줄지는 H3 Repository Context에서 다룬다.
+macOS의 `sed -i`, `cat -A`는 Linux와 달라서, `md5sum`은 측정 환경의 PATH에 `/sbin`이 없어서 bash 명령이 여러 번 실패했다. model은 오류를 보고 다른 명령으로 바꿨지만 호출이 늘었다. Mini-SWE-Agent는 시스템 prompt에 OS 정보와 macOS용 안내를 넣는다. 작업 환경 정보를 model에게 어떻게 줄지는 H3 Repository Context에서 다룬다.

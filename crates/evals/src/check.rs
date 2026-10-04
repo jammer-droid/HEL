@@ -171,6 +171,12 @@ fn judge(record: &Record, task: &Task, sidecar: &RunSidecar, run_dir: &Path) -> 
                     count,
                     path,
                 } => tool_calls(record, *category, *count, path.as_deref(), &sidecar.workdir),
+                CheckKind::IniValue {
+                    path,
+                    section,
+                    key,
+                    value,
+                } => ini_value(&run_dir.join("workspace").join(path), section, key, value),
             };
             CheckResult {
                 id: check.id.clone(),
@@ -325,6 +331,53 @@ fn tool_calls(
     )
 }
 
+/// `key` in `[section]` of the INI file has `expected`. Keys and values are trimmed, blank lines
+/// and `;`/`#` comment lines are skipped, and an inline comment after whitespace is dropped.
+/// Formatting (spacing around `=`, blank lines, key order) is not compared. If the key appears
+/// more than once in the section, the last one counts, as most INI readers do.
+fn ini_value(file: &Path, section: &str, key: &str, expected: &str) -> (bool, String) {
+    let text = match fs::read_to_string(file) {
+        Ok(text) => text,
+        Err(e) => return (false, format!("cannot read {}: {e}", file.display())),
+    };
+    let mut current = String::new();
+    let mut found = None;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
+            continue;
+        }
+        if let Some(name) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
+            current = name.trim().to_string();
+            continue;
+        }
+        if current != section {
+            continue;
+        }
+        if let Some((k, v)) = line.split_once('=')
+            && k.trim() == key
+        {
+            found = Some(strip_inline_comment(v.trim()).to_string());
+        }
+    }
+    let at = format!("[{section}] {key}");
+    match found {
+        Some(actual) if actual == expected => (true, format!("{at} = {actual}")),
+        Some(actual) => (false, format!("{at} = {actual} (expected {expected})")),
+        None => (false, format!("{at} not found")),
+    }
+}
+
+fn strip_inline_comment(value: &str) -> &str {
+    value
+        .find([' ', '\t'])
+        .and_then(|i| {
+            let rest = value[i..].trim_start();
+            (rest.starts_with(';') || rest.starts_with('#')).then(|| value[..i].trim_end())
+        })
+        .unwrap_or(value)
+}
+
 fn canonical(path: &Path) -> PathBuf {
     fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
@@ -362,6 +415,26 @@ mod tests {
         assert!(!pass);
         assert!(detail.contains("line 2 differs"), "{detail}");
         assert!(detail.contains("y·=··2"), "{detail}");
+    }
+
+    #[test]
+    fn ini_value_ignores_formatting_and_reads_the_section() {
+        let text = "[server]\nport = 9090\n\n[cache]\n; local override\ncache_ttl=300  ; tuned\n";
+        let dir = temp("ini-pass", &[("local.ini", text)]);
+        let file = dir.join("local.ini");
+        assert!(ini_value(&file, "cache", "cache_ttl", "300").0);
+        let (pass, detail) = ini_value(&file, "server", "cache_ttl", "300");
+        assert!(!pass);
+        assert!(detail.contains("not found"), "{detail}");
+    }
+
+    #[test]
+    fn ini_value_reports_wrong_value_and_uses_last_occurrence() {
+        let text = "[cache]\ncache_ttl = 300\ncache_ttl = 60\n";
+        let dir = temp("ini-fail", &[("default.ini", text)]);
+        let (pass, detail) = ini_value(&dir.join("default.ini"), "cache", "cache_ttl", "300");
+        assert!(!pass);
+        assert!(detail.contains("= 60 (expected 300)"), "{detail}");
     }
 
     #[test]

@@ -97,8 +97,36 @@ fn build(root: &Path) -> Result<String, Box<dyn Error>> {
     runner::git_version(root, &SOURCES)
 }
 
-/// `settings.tools` (a list of tool names) becomes `--tools a,b`. No setting, no flag:
-/// hel then uses its default tool set, so the Lab's starting code runs unchanged.
+/// hel flags from the condition settings. No setting, no flag, so the Lab's starting code runs
+/// with its own defaults: `tools` (a list of tool names) becomes `--tools a,b`; `env: true` /
+/// `false` becomes `--env` / `--no-env`; `context_file: <name>` becomes `--context-file <name>`
+/// and `context_file: false` becomes `--no-context-file`. (From H3 on, hel sends the environment
+/// and `HEL.md` by default.)
+fn hel_args(settings: &Value) -> Result<Vec<String>, Box<dyn Error>> {
+    let mut args = tool_args(settings)?;
+    match settings.get("env") {
+        None => {}
+        Some(Value::Bool(true)) => args.push("--env".to_string()),
+        Some(Value::Bool(false)) => args.push("--no-env".to_string()),
+        Some(other) => {
+            return Err(format!("settings.env must be true or false, got {other}").into());
+        }
+    }
+    match settings.get("context_file") {
+        None => {}
+        Some(Value::String(name)) if !name.is_empty() => {
+            args.extend(["--context-file".to_string(), name.clone()]);
+        }
+        Some(Value::Bool(false)) => args.push("--no-context-file".to_string()),
+        Some(other) => {
+            return Err(
+                format!("settings.context_file must be a file name or false, got {other}").into(),
+            );
+        }
+    }
+    Ok(args)
+}
+
 fn tool_args(settings: &Value) -> Result<Vec<String>, Box<dyn Error>> {
     let Some(tools) = settings.get("tools") else {
         return Ok(Vec::new());
@@ -127,14 +155,16 @@ pub fn run(job: &RunJob) -> Result<Record, Box<dyn Error>> {
     let mut command = Command::new(&hel.path);
     command
         .args(["--instruction", job.instruction])
-        .args(tool_args(&job.condition.settings)?)
+        .args(hel_args(&job.condition.settings)?)
         .arg("--context")
         .arg(&context_path)
         .arg("--record")
         .arg(&record_path)
         .current_dir(&job.workdir)
         .env_clear()
-        .env("PATH", "/usr/bin:/bin")
+        // Same as the Claude Code driver: the system default PATH, including sbin (macOS keeps
+        // md5 and md5sum in /sbin).
+        .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
         .env("DEEPSEEK_API_KEY", job.api_key)
         .stdin(Stdio::null())
         .stdout(fs::File::create(job.run_dir.join("raw/stdout.txt"))?)
@@ -186,6 +216,17 @@ mod tests {
     fn tools_setting_becomes_comma_separated_flag() {
         let args = tool_args(&json!({ "tools": ["bash", "read_file"] })).unwrap();
         assert_eq!(args, ["--tools", "bash,read_file"]);
+    }
+
+    #[test]
+    fn env_and_context_file_settings_become_flags() {
+        assert!(hel_args(&json!({})).unwrap().is_empty());
+        let off = hel_args(&json!({ "env": false, "context_file": false })).unwrap();
+        assert_eq!(off, ["--no-env", "--no-context-file"]);
+        let args = hel_args(&json!({ "env": true, "context_file": "HEL.md" })).unwrap();
+        assert_eq!(args, ["--env", "--context-file", "HEL.md"]);
+        assert!(hel_args(&json!({ "env": "yes" })).is_err());
+        assert!(hel_args(&json!({ "context_file": "" })).is_err());
     }
 
     #[test]

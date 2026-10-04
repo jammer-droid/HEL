@@ -97,6 +97,13 @@ pub enum CheckKind {
         count: usize,
         path: Option<String>,
     },
+    /// A key in an INI section of a file in the working directory after the run has `value`.
+    IniValue {
+        path: PathBuf,
+        section: String,
+        key: String,
+        value: String,
+    },
 }
 
 fn empty_object() -> Value {
@@ -177,4 +184,26 @@ pub fn load_task(root: &Path, id: &str) -> Result<Task, Box<dyn Error>> {
     }
     task.dir = dir;
     Ok(task)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every Lab definition and the tasks it names parse, so a typo shows up before any run.
+    #[test]
+    fn repository_labs_and_tasks_parse() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let labs = fs::read_dir(root.join("evals/labs")).unwrap();
+        for entry in labs {
+            let path = entry.unwrap().path();
+            let Some(lab) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let plan = load_plan(&root, Some(lab)).unwrap_or_else(|e| panic!("{lab}: {e}"));
+            for id in &plan.tasks {
+                load_task(&root, id).unwrap_or_else(|e| panic!("{lab}/{id}: {e}"));
+            }
+        }
+    }
 }
