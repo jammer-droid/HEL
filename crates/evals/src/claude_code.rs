@@ -24,6 +24,9 @@ const DEFAULT_BASE_URL: &str = "https://api.deepseek.com/anthropic";
 const STREAM_FILE: &str = "raw/stream.jsonl";
 
 pub fn run(job: &RunJob) -> Result<Record, Box<dyn Error>> {
+    if !job.turns.is_empty() {
+        return Err("claude-code driver does not support session tasks (turns)".into());
+    }
     let settings = &job.condition.settings;
     let binary = binary(job.condition);
     let base_url = settings
@@ -375,6 +378,7 @@ mod tests {
         let job = RunJob {
             ctx,
             instruction: "",
+            turns: &[],
             hel: None,
             condition: &condition,
             run_dir: PathBuf::new(),

@@ -6,4 +6,4 @@ tool을 쓰는 요청에서는 이전 응답의 `reasoning_content`를 돌려보
 
 ## 요청을 보내기 전에는 크기를 모른다
 
-`hel`은 응답을 받은 뒤에야 그 요청의 `prompt_tokens`를 알게 된다. 요약 기준을 넘었는지는 요청을 보내기 전에 판단해야 하므로, 마지막 응답의 token 수에 그 뒤 추가된 내용의 추정치를 더하는 방법이 필요하다. Codex는 bytes를 4로 나누고, DeepSeek Harness는 글자 수를 4로 나눈다. 어느 쪽을 쓸지는 H6 Compaction에서 정한다.
+`hel`은 응답을 받은 뒤에야 그 요청의 `prompt_tokens`를 알게 된다. 압축 기준을 넘었는지는 요청을 보내기 전에 판단해야 하므로, 마지막 응답의 token 수에 그 뒤 추가된 내용의 추정치를 더하는 방법이 필요하다. Codex는 bytes를 4로 나누고, DeepSeek Harness는 글자 수를 4로 나눈다. 어느 쪽을 쓸지는 H6 Compaction에서 정한다.

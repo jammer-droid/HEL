@@ -235,6 +235,16 @@ fn markdown(
         "\nNumbers are means over valid runs. `*` marks derived values (computed, not measured).\n"
     )?;
 
+    let charts = cache_charts(results, judged);
+    if !charts.is_empty() {
+        writeln!(out, "## Cache hit by request\n")?;
+        writeln!(
+            out,
+            "Mean over valid runs that reached each request. Auxiliary requests (e.g. compaction) are excluded from the series and listed below each chart.\n"
+        )?;
+        out.push_str(&charts);
+    }
+
     writeln!(out, "## Runs\n")?;
     for run in judged {
         let termination = run
@@ -280,32 +290,162 @@ fn markdown(
     Ok(out)
 }
 
-/// Per-call context from a raw log whose lines carry an OpenAI-style `response.usage`, e.g.
-/// `context per call: 462 → 4409 → 4591 · cache hit: 0 → 640 → 4352`. `None` for other formats.
-fn context_per_call(raw: &str) -> Option<String> {
-    let mut contexts = Vec::new();
-    let mut hits = Vec::new();
+/// Model requests read from a raw log whose lines carry an OpenAI-style `response.usage`.
+/// Entries with a `purpose` (e.g. `"compaction"`, H6) are the harness's own auxiliary requests;
+/// they are kept apart from the conversation's requests.
+struct Requests {
+    /// Conversation requests in order: (prompt tokens, cache-hit tokens if reported).
+    main: Vec<(u64, Option<u64>)>,
+    /// Auxiliary requests: (number of conversation requests before it, purpose, prompt, hit).
+    aux: Vec<(usize, String, u64, Option<u64>)>,
+}
+
+fn parse_requests(raw: &str) -> Option<Requests> {
+    let mut requests = Requests {
+        main: Vec::new(),
+        aux: Vec::new(),
+    };
     for line in raw.lines() {
         let entry: serde_json::Value = serde_json::from_str(line).ok()?;
         let Some(usage) = entry.pointer("/response/usage") else {
             continue;
         };
-        contexts.push(usage.get("prompt_tokens")?.as_u64()?.to_string());
-        hits.push(
-            usage
-                .get("prompt_cache_hit_tokens")
-                .and_then(serde_json::Value::as_u64)
-                .map_or("?".to_string(), |hit| hit.to_string()),
-        );
+        let prompt = usage.get("prompt_tokens")?.as_u64()?;
+        let hit = usage
+            .get("prompt_cache_hit_tokens")
+            .and_then(serde_json::Value::as_u64);
+        match entry.get("purpose").and_then(serde_json::Value::as_str) {
+            Some(purpose) => {
+                requests
+                    .aux
+                    .push((requests.main.len(), purpose.to_string(), prompt, hit))
+            }
+            None => requests.main.push((prompt, hit)),
+        }
     }
-    if contexts.is_empty() {
-        return None;
-    }
-    Some(format!(
+    (!requests.main.is_empty()).then_some(requests)
+}
+
+/// One line per run, e.g. `context per call: 462 → 4409 → 4591 · cache hit: 0 → 640 → 4352`,
+/// followed by any auxiliary requests. `None` for raw logs in other formats.
+fn context_per_call(raw: &str) -> Option<String> {
+    let requests = parse_requests(raw)?;
+    let contexts: Vec<String> = requests.main.iter().map(|(p, _)| p.to_string()).collect();
+    let hits: Vec<String> = requests
+        .main
+        .iter()
+        .map(|(_, h)| h.map_or("?".to_string(), |h| h.to_string()))
+        .collect();
+    let mut line = format!(
         "context per call: {} · cache hit: {}",
         contexts.join(" → "),
         hits.join(" → ")
-    ))
+    );
+    for (after, purpose, prompt, hit) in &requests.aux {
+        let hit = hit.map_or("?".to_string(), |h| h.to_string());
+        line.push_str(&format!(
+            " · {purpose} after call {after}: {prompt} (cache hit {hit})"
+        ));
+    }
+    Some(line)
+}
+
+/// Mermaid charts of the mean cache-hit share and context size by request position, one pair per
+/// task and condition, averaged over the valid runs that reached that position.
+/// Upper end of the token axis: the largest value rounded up to a thousand, so bars start at 0.
+fn context_axis_top(values: &[f64]) -> u64 {
+    let max = values.iter().copied().fold(0.0, f64::max);
+    ((max / 1000.0).ceil() as u64).max(1) * 1000
+}
+
+/// Draws chart marks in a strong color; Mermaid's default xychart palette is very light.
+const CHART_INIT: &str =
+    r##"%%{init: {"themeVariables": {"xyChart": {"plotColorPalette": "#e8590c"}}}}%%"##;
+
+fn cache_charts(results: &Path, judged: &[Judged]) -> String {
+    let mut groups: BTreeMap<(String, String), Vec<Requests>> = BTreeMap::new();
+    for run in judged.iter().filter(|r| r.verdict.overall != "invalid") {
+        let Some(raw) = run
+            .record
+            .as_ref()
+            .and_then(|r| r.artifacts.raw_transcript.as_ref())
+        else {
+            continue;
+        };
+        let Some(requests) = fs::read_to_string(results.join(&run.run_id).join(raw))
+            .ok()
+            .and_then(|text| parse_requests(&text))
+        else {
+            continue;
+        };
+        groups
+            .entry((run.task_id.clone(), run.condition.clone()))
+            .or_default()
+            .push(requests);
+    }
+    let mut out = String::new();
+    for ((task, condition), runs) in &groups {
+        let longest = runs.iter().map(|r| r.main.len()).max().unwrap_or(0);
+        let mut hit_share = Vec::new();
+        let mut context = Vec::new();
+        for i in 0..longest {
+            let at: Vec<(u64, Option<u64>)> =
+                runs.iter().filter_map(|r| r.main.get(i).copied()).collect();
+            let shares: Vec<f64> = at
+                .iter()
+                .filter_map(|(p, h)| {
+                    h.map(|h| {
+                        if *p == 0 {
+                            0.0
+                        } else {
+                            h as f64 * 100.0 / *p as f64
+                        }
+                    })
+                })
+                .collect();
+            hit_share.push(if shares.is_empty() {
+                0.0
+            } else {
+                shares.iter().sum::<f64>() / shares.len() as f64
+            });
+            context.push(at.iter().map(|(p, _)| *p as f64).sum::<f64>() / at.len() as f64);
+        }
+        let axis: Vec<String> = (1..=longest).map(|i| i.to_string()).collect();
+        let join = |values: &[f64]| {
+            values
+                .iter()
+                .map(|v| format!("{v:.0}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let _ = writeln!(out, "### {task} · {condition} ({} runs)\n", runs.len());
+        let _ = writeln!(
+            out,
+            "```mermaid\n{CHART_INIT}\nxychart-beta\n    title \"cache hit % by request\"\n    x-axis \"request\" [{}]\n    y-axis \"cache hit %\" 0 --> 100\n    line [{}]\n```\n",
+            axis.join(", "),
+            join(&hit_share)
+        );
+        let _ = writeln!(
+            out,
+            "```mermaid\n{CHART_INIT}\nxychart-beta\n    title \"context tokens by request\"\n    x-axis \"request\" [{}]\n    y-axis \"tokens\" 0 --> {}\n    bar [{}]\n```\n",
+            axis.join(", "),
+            context_axis_top(&context),
+            join(&context)
+        );
+        let aux: Vec<String> = runs
+            .iter()
+            .enumerate()
+            .flat_map(|(n, r)| {
+                r.aux.iter().map(move |(after, purpose, _, _)| {
+                    format!("run {} {purpose} after request {after}", n + 1)
+                })
+            })
+            .collect();
+        if !aux.is_empty() {
+            let _ = writeln!(out, "{}\n", aux.join(" · "));
+        }
+    }
+    out
 }
 
 fn mean<'a>(metrics: impl Iterator<Item = &'a Metric>) -> String {
@@ -422,5 +562,39 @@ mod tests {
     fn skips_raw_logs_without_usage() {
         assert_eq!(context_per_call(r#"{"type":"assistant"}"#), None);
         assert_eq!(context_per_call("not json"), None);
+    }
+
+    #[test]
+    fn keeps_compaction_requests_apart_from_the_conversation() {
+        let raw = [
+            r#"{"turn":1,"response":{"usage":{"prompt_tokens":500,"prompt_cache_hit_tokens":0}}}"#,
+            r#"{"turn":1,"response":{"usage":{"prompt_tokens":2000,"prompt_cache_hit_tokens":384}}}"#,
+            r#"{"turn":2,"purpose":"compaction","response":{"usage":{"prompt_tokens":2100,"prompt_cache_hit_tokens":1920}}}"#,
+            r#"{"turn":2,"response":{"usage":{"prompt_tokens":900,"prompt_cache_hit_tokens":384}}}"#,
+        ]
+        .join("\n");
+        let requests = parse_requests(&raw).unwrap();
+        assert_eq!(
+            requests.main,
+            [(500, Some(0)), (2000, Some(384)), (900, Some(384))]
+        );
+        assert_eq!(
+            requests.aux,
+            [(2, "compaction".to_string(), 2100, Some(1920))]
+        );
+        assert_eq!(
+            context_per_call(&raw).as_deref(),
+            Some(
+                "context per call: 500 → 2000 → 900 · cache hit: 0 → 384 → 384 \
+                 · compaction after call 2: 2100 (cache hit 1920)"
+            )
+        );
+    }
+
+    #[test]
+    fn token_axis_starts_at_zero_and_rounds_up() {
+        assert_eq!(context_axis_top(&[445.0, 5351.0]), 6000);
+        assert_eq!(context_axis_top(&[3000.0]), 3000);
+        assert_eq!(context_axis_top(&[]), 1000);
     }
 }

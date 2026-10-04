@@ -23,14 +23,20 @@ cargo --version
 이 가이드의 실험은 DeepSeek의 `deepseek-flash` model을 쓴다. 이 model을 고른 이유와 그 한계는 [측정 방법](measurement.md)에서 다룬다.
 
 1. [DeepSeek Platform](https://platform.deepseek.com/)에서 계정을 만들고 API key를 발급한다.
-2. key를 환경 변수로 설정한다.
+2. key를 저장소 루트의 `.env` 파일에 적는다. `evals`는 환경 변수 `DEEPSEEK_API_KEY`가 없으면 이 파일을 읽는다.
+
+```bash
+echo 'DEEPSEEK_API_KEY=<발급받은 key>' > .env
+```
+
+`hel`을 직접 실행할 때는 환경 변수로 넣는다.
 
 ```bash
 export DEEPSEEK_API_KEY="<발급받은 key>"
 ```
 
 > [!WARNING]
-> API key를 코드나 설정 파일에 직접 적어 commit하지 않는다. 저장소의 `.gitignore`는 `.env` 파일을 제외하도록 되어 있지만, key는 shell 환경 변수나 비밀 관리 도구로 주입하는 것을 기본으로 한다.
+> `.env`는 저장소의 `.gitignore`에 들어 있어 commit되지 않는다. key를 코드나 다른 설정 파일에 적어 commit하지 않는다.
 
 ## 소스 받기
 
@@ -69,7 +75,8 @@ git clone https://github.com/jammer-droid/HEL.git
 | [`h04`](https://github.com/jammer-droid/HEL/tree/h04) | H3 완성 상태. `hel`이 실행 환경 정보와 `HEL.md`를 system message로 보냄 |
 | [`h05`](https://github.com/jammer-droid/HEL/tree/h05) | H4 완성 상태 |
 | [`h06`](https://github.com/jammer-droid/HEL/tree/h06) | H5 완성 상태 |
-| `h07` *(예정)* | H6 완성 상태 |
+| [`h07`](https://github.com/jammer-droid/HEL/tree/h07) | H6 완성 상태. `hel`이 context를 기본으로 압축함 |
+| `h08` *(예정)* | H7 완성 상태 |
 | `hXX` | H(XX-1) 완성 상태 |
 
 Lab을 시작할 때는 해당 tag에서 branch를 만든다. 예를 들어 H1은 `h01`에서 시작한다.

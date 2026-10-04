@@ -1,0 +1,72 @@
+# bravo service configuration
+# Maintained by the bravo team. Comments below are operational notes.
+
+[service]
+name = "bravo"
+port = 7420
+owner = "tomas"
+region = "eu-west"
+
+[notes]
+# note 001: this entry records log retention for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_001 = "log retention reviewed in cycle 7"
+# note 002: this entry records health checks for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_002 = "health checks reviewed in cycle 2"
+# note 003: this entry describes rate limiting for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_003 = "rate limiting reviewed in cycle 14"
+# note 004: this entry controls log retention for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_004 = "log retention reviewed in cycle 3"
+# note 005: this entry limits deployment windows for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_005 = "deployment windows reviewed in cycle 19"
+# note 006: this entry documents batch sizing for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_006 = "batch sizing reviewed in cycle 6"
+# note 007: this entry schedules batch sizing for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_007 = "batch sizing reviewed in cycle 14"
+# note 008: this entry schedules schema migration for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_008 = "schema migration reviewed in cycle 10"
+# note 009: this entry controls schema migration for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_009 = "schema migration reviewed in cycle 11"
+# note 010: this entry controls timeout budget for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_010 = "timeout budget reviewed in cycle 2"
+# note 011: this entry schedules queue draining for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_011 = "queue draining reviewed in cycle 14"
+# note 012: this entry documents schema migration for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_012 = "schema migration reviewed in cycle 24"
+# note 013: this entry controls queue draining for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_013 = "queue draining reviewed in cycle 32"
+# note 014: this entry schedules rate limiting for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_014 = "rate limiting reviewed in cycle 4"
+# note 015: this entry tracks tracing sample rate for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_015 = "tracing sample rate reviewed in cycle 26"
+# note 016: this entry records deployment windows for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_016 = "deployment windows reviewed in cycle 7"
+# note 017: this entry schedules request routing for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_017 = "request routing reviewed in cycle 22"
+# note 018: this entry records log retention for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_018 = "log retention reviewed in cycle 28"
+# note 019: this entry controls backup rotation for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_019 = "backup rotation reviewed in cycle 20"
+# note 020: this entry documents rate limiting for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_020 = "rate limiting reviewed in cycle 29"
+# note 021: this entry describes deployment windows for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_021 = "deployment windows reviewed in cycle 30"
+# note 022: this entry schedules tracing sample rate for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_022 = "tracing sample rate reviewed in cycle 8"
+# note 023: this entry describes cache warmup for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_023 = "cache warmup reviewed in cycle 31"
+# note 024: this entry documents secret rotation for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_024 = "secret rotation reviewed in cycle 26"
+# note 025: this entry tracks deployment windows for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_025 = "deployment windows reviewed in cycle 6"
+# note 026: this entry records alert thresholds for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_026 = "alert thresholds reviewed in cycle 30"
+# note 027: this entry summarizes secret rotation for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_027 = "secret rotation reviewed in cycle 33"
+# note 028: this entry tracks rate limiting for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_028 = "rate limiting reviewed in cycle 23"
+# note 029: this entry documents rate limiting for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_029 = "rate limiting reviewed in cycle 20"
+# note 030: this entry summarizes tracing sample rate for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_030 = "tracing sample rate reviewed in cycle 32"
+# note 031: this entry describes alert thresholds for bravo; review it during the quarterly audit and keep the change log in the team wiki.
+note_031 = "alert thresholds reviewed in cycle 7"

@@ -84,6 +84,14 @@ checks:
     not_applicable: [baseline]
 ```
 
+**세션 task (eval-v5)**: `instruction` 대신 `turns`에 지시 목록을 쓰면 harness가 한 세션에서 지시를 차례로 보낸다. 앞 지시의 대화는 다음 지시로 이어지고, record는 run당 하나이며 `outcome.final_output`은 마지막 지시의 답이다. `instruction`과 `turns` 중 정확히 하나만 쓴다. 지원하는 driver는 hel(`--turns-file`)뿐이며, claude-code driver는 세션 task를 실행하지 않고 오류를 낸다. `evals try --instruction`으로 세션 task의 지시를 바꿀 수 없다.
+
+```yaml
+turns:
+  - Read services/alpha.toml and reply with only the value of port in its [service] section.
+  - Without reading any file again, reply with only the owner of the alpha service.
+```
+
 ### 4.1 Check 종류
 
 | type | 판정 | 비고 |
@@ -163,7 +171,7 @@ checker의 출력이다.
 ### 7.3 최소 격리 요건
 
 - **설정 격리**: 사용자 설정, plugin, MCP, memory를 읽지 않는다. run마다 별도 설정 디렉터리를 쓴다.
-- **인증**: 인증 정보는 실행 시 환경 변수로만 주입한다. 전역 설정에 저장하지 않는다. `raw/`에 남기는 원본 기록에는 API key나 `Authorization` 같은 인증 header를 포함하지 않는다.
+- **인증**: 인증 정보는 실행 시 환경 변수로 주입한다. `evals`는 `DEEPSEEK_API_KEY` 환경 변수가 없으면 저장소 루트의 `.env`(git 제외)에서 읽어 harness 실행 환경에 넣는다. 전역 설정에 저장하지 않는다. `raw/`에 남기는 원본 기록에는 API key나 `Authorization` 같은 인증 header를 포함하지 않는다.
 - **외부 통신**: telemetry와 자동 업데이트를 가능하면 끈다. 실행한 버전을 record에 기록한다.
 - **작업 디렉터리**: task fixture의 임시 복사본을 쓴다.
 - **권한**: 사용자 환경에서 권한 확인을 우회하는 실행 모드를 쓰지 않는다. container 안에서는 허용한다.
@@ -265,3 +273,4 @@ reasoning/effort 수준, 허용한 tool 목록, system prompt 수정 여부를 L
 | eval-v2 | H2. task `edit-line-01`, `edit-ambiguous-01`, `write-new-01`(보조 확인용, h02 Lab 정의 밖) 추가. check `file_exact_match`, run 폴더에 `workspace/`(작업 디렉터리 사본). record·verdict 형식 변경 없음 |
 | eval-v3 | H3. task `env-checksum-01`, `rule-config-01` 추가. check `ini_value`. hel 조건의 `settings.env` → `--env`, `settings.context_file` → `--context-file`. hel 실행 PATH를 `/usr/bin:/bin:/usr/sbin:/sbin`으로 변경(Claude Code driver와 같게. 이전 `/usr/bin:/bin`). H3 Adopt 후 `settings.env: false` → `--no-env`, `settings.context_file: false` → `--no-context-file` 추가(hel 기본값이 켜짐으로 바뀜). record·verdict 형식 변경 없음 |
 | eval-v4 | H4. task `search-config-01`, `trace-config-01` 추가, `find-echo-01` 재사용. 기존 `output_exact_match` 사용, record·verdict·check 형식 변경 없음. hel `settings.ripgrep: true`는 runner PATH의 rg를 run별 bin/에 복사해 고정 PATH 앞에 추가하고 raw/search-engine.json에 원본 경로·버전을 기록. 누락·false이면 기존 PATH 유지. 원본 없음·복사 실행 실패는 API 호출 전에 중단 |
+| eval-v5 | H6. 세션 task(`turns`, §4) 형식과 task `session-recall-01` 추가. hel driver는 지시 목록을 `raw/turns.json`에 쓰고 `--turns-file`로 넘긴다. hel raw log 항목에 세션 지시 번호 `turn`, harness 보조 요청(예: compaction)에 `purpose`. hel 조건 `settings.compaction: {at_tokens, keep_recent_tokens}` → `--compact-at`/`--keep-recent`, `false` → `--no-compaction`. report에 요청 순서별 cache hit %·context Mermaid 그래프(`purpose` 항목은 그래프에서 빼고 따로 표시)와 run별 보조 요청. record·verdict·check 형식 변경 없음. `DEEPSEEK_API_KEY`가 환경에 없으면 저장소 루트 `.env`에서 읽음 |

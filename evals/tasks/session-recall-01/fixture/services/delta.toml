@@ -1,0 +1,72 @@
+# delta service configuration
+# Maintained by the delta team. Comments below are operational notes.
+
+[service]
+name = "delta"
+port = 7640
+owner = "oskar"
+region = "eu-west"
+
+[notes]
+# note 001: this entry describes rate limiting for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_001 = "rate limiting reviewed in cycle 34"
+# note 002: this entry summarizes health checks for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_002 = "health checks reviewed in cycle 5"
+# note 003: this entry summarizes secret rotation for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_003 = "secret rotation reviewed in cycle 17"
+# note 004: this entry tracks log retention for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_004 = "log retention reviewed in cycle 32"
+# note 005: this entry limits retry policy for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_005 = "retry policy reviewed in cycle 34"
+# note 006: this entry limits tracing sample rate for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_006 = "tracing sample rate reviewed in cycle 27"
+# note 007: this entry records rate limiting for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_007 = "rate limiting reviewed in cycle 29"
+# note 008: this entry schedules schema migration for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_008 = "schema migration reviewed in cycle 15"
+# note 009: this entry schedules backup rotation for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_009 = "backup rotation reviewed in cycle 28"
+# note 010: this entry tracks backup rotation for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_010 = "backup rotation reviewed in cycle 12"
+# note 011: this entry tracks tracing sample rate for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_011 = "tracing sample rate reviewed in cycle 18"
+# note 012: this entry summarizes tracing sample rate for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_012 = "tracing sample rate reviewed in cycle 34"
+# note 013: this entry tracks secret rotation for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_013 = "secret rotation reviewed in cycle 24"
+# note 014: this entry schedules batch sizing for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_014 = "batch sizing reviewed in cycle 37"
+# note 015: this entry controls cache warmup for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_015 = "cache warmup reviewed in cycle 21"
+# note 016: this entry describes tracing sample rate for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_016 = "tracing sample rate reviewed in cycle 40"
+# note 017: this entry describes deployment windows for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_017 = "deployment windows reviewed in cycle 17"
+# note 018: this entry summarizes batch sizing for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_018 = "batch sizing reviewed in cycle 5"
+# note 019: this entry tracks alert thresholds for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_019 = "alert thresholds reviewed in cycle 14"
+# note 020: this entry summarizes backup rotation for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_020 = "backup rotation reviewed in cycle 38"
+# note 021: this entry schedules batch sizing for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_021 = "batch sizing reviewed in cycle 36"
+# note 022: this entry describes health checks for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_022 = "health checks reviewed in cycle 28"
+# note 023: this entry controls secret rotation for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_023 = "secret rotation reviewed in cycle 14"
+# note 024: this entry limits deployment windows for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_024 = "deployment windows reviewed in cycle 5"
+# note 025: this entry documents backup rotation for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_025 = "backup rotation reviewed in cycle 1"
+# note 026: this entry controls request routing for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_026 = "request routing reviewed in cycle 1"
+# note 027: this entry records tracing sample rate for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_027 = "tracing sample rate reviewed in cycle 39"
+# note 028: this entry limits backup rotation for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_028 = "backup rotation reviewed in cycle 31"
+# note 029: this entry summarizes tracing sample rate for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_029 = "tracing sample rate reviewed in cycle 3"
+# note 030: this entry tracks log retention for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_030 = "log retention reviewed in cycle 27"
+# note 031: this entry documents request routing for delta; review it during the quarterly audit and keep the change log in the team wiki.
+note_031 = "request routing reviewed in cycle 28"

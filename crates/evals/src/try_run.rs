@@ -46,6 +46,13 @@ pub fn run(root: &Path, options: TryOptions) -> Result<(), Box<dyn Error>> {
         return Err(format!("{} is not installed", condition.harness).into());
     }
 
+    if options.instruction.is_some() && !task.turns.is_empty() {
+        return Err(format!(
+            "{} is a session task (turns); --instruction cannot replace it",
+            task.id
+        )
+        .into());
+    }
     let overridden = options.instruction.is_some() || options.fixture.is_some();
     let instruction = options
         .instruction
@@ -71,11 +78,12 @@ pub fn run(root: &Path, options: TryOptions) -> Result<(), Box<dyn Error>> {
         task: &task,
         condition: &condition,
         instruction: &instruction,
+        turns: &task.turns,
         fixture,
         run_dir: run_dir.clone(),
         overridden,
     };
-    let api_key = runner::api_key()?;
+    let api_key = runner::api_key(root)?;
     let record = runner::execute(&api_key, &plan, &spec, hel.as_ref())?;
     let judged = check::check_run(root, &run_dir, &task)?;
 
@@ -141,7 +149,13 @@ fn show(plan: &Plan, task: &Task, record: &Record, judged: &Judged, shown: &Show
     } else {
         ""
     };
-    println!("input     {}{marker}", instruction.trim());
+    if task.turns.is_empty() {
+        println!("input     {}{marker}", instruction.trim());
+    } else {
+        for (i, turn) in task.turns.iter().enumerate() {
+            println!("turn {:<4} {}", i + 1, turn.trim());
+        }
+    }
 
     println!("\ntool calls");
     if record.events.is_empty() {

@@ -1,0 +1,13 @@
+# FAQ
+
+## window를 넘는 오류가 나면
+
+`hel`은 요청 전에 추정한 크기로만 압축 여부를 정한다. 추정이 실제보다 작아 API가 window 초과 오류를 돌려주면, 지금은 그 지시가 오류로 끝난다. DeepSeek Harness와 Mistral Vibe는 이 오류를 받으면 기준과 상관없이 압축하고 같은 요청을 다시 보낸다. 오류를 받고 기록을 되돌리거나 다시 시도하는 일은 세션 기록을 다루는 H9 Sessions & Checkpoints에서 함께 본다.
+
+## 파일로 저장한 tool 결과는 어디에 있나
+
+12,500 token을 넘는 tool 결과는 작업 디렉터리 밖의 임시 폴더(`hel-spill-<pid>`)에 저장하고 그 경로를 model에게 알려 준다. `bash`로는 그 파일을 읽을 수 있지만 `read_file`은 작업 디렉터리 안만 읽으므로 읽지 못한다. harness가 작업 디렉터리 밖에 파일을 쓰고 model에게 읽게 하는 경로는 H7 Permissions와 H8 Sandbox에서 권한 범위와 함께 다시 정한다.
+
+## 압축이 비용을 아끼는 시점
+
+이번 세션에서는 요약 출력과 압축 직후의 cache miss 때문에 실행당 비용이 늘었다. 압축이 아끼는 것은 그 뒤 요청마다 다시 보내는 input이므로, 압축 뒤 요청이 많고 context가 클수록 이득이 커진다. 압축 기준과 세션 길이에 따라 손익이 어디서 바뀌는지는 harness 설정을 비교하는 H13 Harness Evaluation에서 측정할 수 있다.

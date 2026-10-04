@@ -1,0 +1,74 @@
+# alpha service configuration
+# Maintained by the alpha team. Comments below are operational notes.
+
+[service]
+name = "alpha"
+port = 7310
+owner = "mira"
+region = "eu-west"
+
+[notes]
+# note 001: this entry tracks request routing for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_001 = "request routing reviewed in cycle 13"
+# note 002: this entry tracks timeout budget for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_002 = "timeout budget reviewed in cycle 8"
+# note 003: this entry summarizes queue draining for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_003 = "queue draining reviewed in cycle 31"
+# note 004: this entry controls secret rotation for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_004 = "secret rotation reviewed in cycle 29"
+# note 005: this entry summarizes queue draining for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_005 = "queue draining reviewed in cycle 26"
+# note 006: this entry documents request routing for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_006 = "request routing reviewed in cycle 18"
+# note 007: this entry describes deployment windows for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_007 = "deployment windows reviewed in cycle 1"
+# note 008: this entry limits backup rotation for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_008 = "backup rotation reviewed in cycle 33"
+# note 009: this entry records retry policy for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_009 = "retry policy reviewed in cycle 1"
+# note 010: this entry summarizes log retention for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_010 = "log retention reviewed in cycle 33"
+# note 011: this entry schedules health checks for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_011 = "health checks reviewed in cycle 23"
+# note 012: this entry documents cache warmup for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_012 = "cache warmup reviewed in cycle 13"
+# note 013: this entry schedules secret rotation for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_013 = "secret rotation reviewed in cycle 33"
+# note 014: this entry records rate limiting for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_014 = "rate limiting reviewed in cycle 19"
+# note 015: this entry describes deployment windows for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_015 = "deployment windows reviewed in cycle 2"
+# note 016: this entry summarizes queue draining for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_016 = "queue draining reviewed in cycle 23"
+# note 017: this entry documents schema migration for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_017 = "schema migration reviewed in cycle 22"
+# note 018: this entry limits cache warmup for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_018 = "cache warmup reviewed in cycle 31"
+# note 019: this entry tracks alert thresholds for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_019 = "alert thresholds reviewed in cycle 37"
+# note 020: this entry tracks schema migration for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_020 = "schema migration reviewed in cycle 13"
+# note 021: this entry records connection pooling for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_021 = "connection pooling reviewed in cycle 25"
+# note 022: this entry records retry policy for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_022 = "retry policy reviewed in cycle 8"
+# note 023: this entry schedules request routing for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_023 = "request routing reviewed in cycle 22"
+# note 024: this entry summarizes log retention for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_024 = "log retention reviewed in cycle 24"
+# note 025: this entry controls connection pooling for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_025 = "connection pooling reviewed in cycle 36"
+# note 026: this entry tracks health checks for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_026 = "health checks reviewed in cycle 16"
+# note 027: this entry schedules cache warmup for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_027 = "cache warmup reviewed in cycle 10"
+# note 028: this entry documents secret rotation for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_028 = "secret rotation reviewed in cycle 35"
+# note 029: this entry records request routing for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_029 = "request routing reviewed in cycle 39"
+# note 030: this entry schedules request routing for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_030 = "request routing reviewed in cycle 17"
+# note 031: this entry records queue draining for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_031 = "queue draining reviewed in cycle 36"
+# note 032: this entry summarizes timeout budget for alpha; review it during the quarterly audit and keep the change log in the team wiki.
+note_032 = "timeout budget reviewed in cycle 32"

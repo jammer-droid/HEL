@@ -35,7 +35,8 @@ harness 구현은 바이브 코딩으로 진행한다. 코드를 작성하는 �
 | [`h04`](https://github.com/jammer-droid/HEL/tree/h04) | H3 완료 상태. `hel`이 실행 환경 정보와 작업 디렉터리의 `HEL.md`를 system message로 보냄(`--no-env`, `--no-context-file`로 끔) |
 | [`h05`](https://github.com/jammer-droid/HEL/tree/h05) | H4 완료 상태 |
 | [`h06`](https://github.com/jammer-droid/HEL/tree/h06) | H5 완료 상태 |
-| `h07` *(예정)* | H6 완료 상태 |
+| [`h07`](https://github.com/jammer-droid/HEL/tree/h07) | H6 완료 상태. `hel`이 context를 기본으로 압축함(`--no-compaction`으로 끔) |
+| `h08` *(예정)* | H7 완료 상태 |
 
 ```bash
 git clone https://github.com/jammer-droid/HEL.git
@@ -56,7 +57,13 @@ git checkout -b my-h01 h01
 | ripgrep (`rg`, H4부터) | 전용 검색 tool과 검색 측정. PATH에서 `rg --version`으로 확인 |
 | Claude Code (선택) | 외부 harness 비교. 없으면 해당 조건은 건너뛴다 |
 
-API key는 환경 변수로 넣는다. 코드나 파일에 적어 commit하지 않는다.
+API key는 저장소 루트의 `.env` 파일에 둔다. `.env`는 `.gitignore`에 들어 있어 commit되지 않는다. `evals`는 환경 변수 `DEEPSEEK_API_KEY`가 없으면 이 파일을 읽는다.
+
+```bash
+echo 'DEEPSEEK_API_KEY=<발급받은 key>' > .env
+```
+
+`hel`을 직접 실행할 때는 환경 변수로 넣는다.
 
 ```bash
 export DEEPSEEK_API_KEY="<발급받은 key>"
@@ -95,6 +102,7 @@ hel --instruction "Read the file hello.txt and print its contents exactly as the
 - 실행한 폴더를 작업 디렉터리로 쓴다. `read_file`, `write_file`, `search_replace` tool은 이 폴더 안의 파일만 다룬다.
 - `--tools`를 생략하면 `bash` tool 하나만 준다. model이 쓴 명령을 이 폴더에서 그대로 실행한다.
 - H4 검색 tool은 `--tools bash,glob,grep`로 제공한다. PATH에 ripgrep(`rg`)이 필요하다. `glob`은 파일명, `grep`은 본문을 검색하고 결과가 100건·10KB를 넘으면 잘림을 표시한다.
+- 대화가 길어지면 context를 관리한다(H6). 요청 전 추정 context가 약 800K token(`deepseek-flash` window 1M 기준)을 넘으면 오래된 대화를 model이 요약하게 해 바꾸고 최근 대화는 원문으로 둔다. 12,500 token을 넘는 tool 결과는 임시 파일에 저장하고 앞·뒤와 경로만 보낸다. `--compact-at <tokens> --keep-recent <tokens>`로 기준을 바꾸고 `--no-compaction`으로 끈다.
 - 실행 환경 정보(OS, shell, 작업 디렉터리)와 이 폴더의 `HEL.md`를 system message로 함께 보낸다. `HEL.md`가 없으면 환경 정보만 보낸다. 상위 폴더의 `HEL.md`는 읽지 않는다.
 - 출력과 오류 메시지는 영어다.
 

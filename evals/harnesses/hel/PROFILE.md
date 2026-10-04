@@ -12,8 +12,11 @@
 ## 실행 규약
 
 ```text
-hel --instruction <TEXT> [--tools <a,b>] [--env | --no-env] [--context-file <name> | --no-context-file] [--context <run-context.json> --record <record.json>]
+hel (--instruction <TEXT> | --turns-file <turns.json>) [--compact-at N --keep-recent M | --no-compaction] [--tools <a,b>] [--env | --no-env] [--context-file <name> | --no-context-file] [--context <run-context.json> --record <record.json>]
 ```
+
+- context 관리(H6, Adopt 이후 기본으로 켜짐): 요청 전 추정 context가 `min(W × 0.8, W − O − 65,536)`(W=1,000,000, O=출력 한도)을 넘으면 8,192자 넘는 이전 tool 결과를 줄이고, 그래도 넘으면 system 다음의 오래된 구간을 model 요약으로 바꾼다. 최근 `(W − O) × 0.16`은 원문 유지. 12,500 token 넘는 tool 결과는 임시 파일에 저장하고 앞·뒤·경로만 보낸다. `--compact-at N --keep-recent M`으로 기준을 바꾸고 `--no-compaction`으로 끈다. Lab 정의의 `settings.compaction: {at_tokens, keep_recent_tokens}` / `false`가 이 인자가 된다. 요약 요청은 raw log에 `purpose: compaction`으로 남는다(`h06`의 `hel`에는 없다).
+- `--turns-file <turns.json>`: JSON 문자열 목록의 지시를 한 세션에서 차례로 보낸다(H6, eval-v5 세션 task). `max_turns`는 지시마다 적용한다. record는 하나이고 최종 출력은 마지막 지시의 답이다. 한 지시가 오류·한도로 끝나면 남은 지시는 보내지 않는다. raw log 항목에 `turn`(1부터)을 남긴다.
 
 - `--tools`: model에게 줄 tool 목록(쉼표 구분). 없으면 `hel`의 기본 tool 구성을 쓴다(H0·`h01`: `read_file`, H1부터: `bash`). 측정 조건은 기본값에 기대지 않고 `settings.tools`로 명시한다. Lab 정의의 hel 조건에 `settings.tools`가 있으면 runner가 이 인자로 넘긴다. H1에서 추가(`h01`의 `hel`에는 없다. baseline 조건에는 `settings.tools`를 두지 않는다).
 - `--env` / `--no-env`: 실행 환경 정보(OS, shell, 작업 디렉터리)를 system message로 보낼지. H3에서 추가했고 H3 Adopt 이후 기본으로 보낸다(`h03`의 `hel`에는 없고 system message도 없다). Lab 정의의 `settings.env: true`/`false`가 이 플래그가 된다.

@@ -37,6 +37,8 @@ pub struct RunSidecar {
 pub struct RunJob<'a> {
     pub ctx: RunContext,
     pub instruction: &'a str,
+    /// Session turns; empty for single-instruction tasks.
+    pub turns: &'a [String],
     pub hel: Option<&'a HelBinary>,
     pub condition: &'a Condition,
     pub run_dir: PathBuf,
@@ -52,6 +54,7 @@ pub struct RunSpec<'a> {
     pub task: &'a Task,
     pub condition: &'a Condition,
     pub instruction: &'a str,
+    pub turns: &'a [String],
     pub fixture: PathBuf,
     pub run_dir: PathBuf,
     pub overridden: bool,
@@ -64,8 +67,38 @@ pub struct Options {
     pub build: bool,
 }
 
-pub fn api_key() -> Result<String, Box<dyn Error>> {
-    std::env::var("DEEPSEEK_API_KEY").map_err(|_| "DEEPSEEK_API_KEY is not set".into())
+const API_KEY: &str = "DEEPSEEK_API_KEY";
+
+/// The API key from the environment, or else from `.env` at the repository root (git-ignored).
+pub fn api_key(root: &Path) -> Result<String, Box<dyn Error>> {
+    if let Ok(key) = std::env::var(API_KEY)
+        && !key.is_empty()
+    {
+        return Ok(key);
+    }
+    std::fs::read_to_string(root.join(".env"))
+        .ok()
+        .and_then(|text| dotenv_value(&text, API_KEY))
+        .ok_or_else(|| format!("{API_KEY} is not set and not found in .env").into())
+}
+
+/// Reads `KEY=value` from `.env` text. Ignores blank lines, `#` comments and an `export ` prefix,
+/// and strips one pair of matching quotes around the value.
+fn dotenv_value(text: &str, key: &str) -> Option<String> {
+    text.lines().find_map(|line| {
+        let line = line.trim();
+        let line = line.strip_prefix("export ").unwrap_or(line);
+        let (name, value) = line.split_once('=')?;
+        if name.trim() != key {
+            return None;
+        }
+        let value = value.trim();
+        let value = ['"', '\'']
+            .iter()
+            .find_map(|q| value.strip_prefix(*q).and_then(|v| v.strip_suffix(*q)))
+            .unwrap_or(value);
+        (!value.is_empty()).then(|| value.to_string())
+    })
 }
 
 pub fn run_all(
@@ -74,7 +107,7 @@ pub fn run_all(
     tasks: &[Task],
     options: &Options,
 ) -> Result<(), Box<dyn Error>> {
-    let api_key = api_key()?;
+    let api_key = api_key(root)?;
     let mut selected: Vec<&Condition> = Vec::new();
     for condition in &plan.conditions {
         if let Some(names) = &options.conditions
@@ -124,6 +157,7 @@ pub fn run_all(
                     task,
                     condition,
                     instruction: &task.instruction,
+                    turns: &task.turns,
                     fixture: task.dir.join(&task.fixture),
                     run_dir,
                     overridden: false,
@@ -194,6 +228,7 @@ pub fn execute(
     let job = RunJob {
         ctx,
         instruction: spec.instruction,
+        turns: spec.turns,
         hel,
         condition: spec.condition,
         run_dir: spec.run_dir.clone(),
@@ -386,4 +421,27 @@ fn copy_dir(from: &Path, to: &Path) -> Result<(), Box<dyn Error>> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_the_api_key_from_dotenv_text() {
+        let text = "# local secrets\nOTHER=1\nexport DEEPSEEK_API_KEY=\"sk-test\"\n";
+        assert_eq!(
+            dotenv_value(text, "DEEPSEEK_API_KEY").as_deref(),
+            Some("sk-test")
+        );
+        assert_eq!(
+            dotenv_value("DEEPSEEK_API_KEY='a b'", "DEEPSEEK_API_KEY").as_deref(),
+            Some("a b")
+        );
+        assert_eq!(dotenv_value("DEEPSEEK_API_KEY=", "DEEPSEEK_API_KEY"), None);
+        assert_eq!(
+            dotenv_value("# DEEPSEEK_API_KEY=x", "DEEPSEEK_API_KEY"),
+            None
+        );
+    }
 }

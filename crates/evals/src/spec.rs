@@ -64,7 +64,12 @@ pub struct Condition {
 #[derive(Debug, Deserialize)]
 pub struct Task {
     pub id: String,
+    /// A single instruction. Exactly one of `instruction` and `turns` is set.
+    #[serde(default)]
     pub instruction: String,
+    /// Instructions sent one after another in one session (H6). The last turn's output is judged.
+    #[serde(default)]
+    pub turns: Vec<String>,
     pub fixture: PathBuf,
     pub checks: Vec<Check>,
     /// Directory of task.yaml; relative paths in the spec resolve against it.
@@ -182,6 +187,18 @@ pub fn load_task(root: &Path, id: &str) -> Result<Task, Box<dyn Error>> {
     if task.id != id {
         return Err(format!("{}: id is {:?}, expected {id:?}", path.display(), task.id).into());
     }
+    let has_instruction = !task.instruction.trim().is_empty();
+    let has_turns = !task.turns.is_empty();
+    if has_instruction == has_turns {
+        return Err(format!(
+            "{}: set exactly one of instruction and turns",
+            path.display()
+        )
+        .into());
+    }
+    if task.turns.iter().any(|turn| turn.trim().is_empty()) {
+        return Err(format!("{}: turns must not be empty strings", path.display()).into());
+    }
     task.dir = dir;
     Ok(task)
 }
@@ -205,5 +222,13 @@ mod tests {
                 load_task(&root, id).unwrap_or_else(|e| panic!("{lab}/{id}: {e}"));
             }
         }
+    }
+
+    #[test]
+    fn session_task_has_turns_and_no_instruction() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let task = load_task(&root, "session-recall-01").unwrap();
+        assert!(task.instruction.is_empty());
+        assert_eq!(task.turns.len(), 6);
     }
 }

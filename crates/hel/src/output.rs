@@ -23,9 +23,14 @@ pub struct RunLog {
     usage_complete: bool,
     /// Prompt tokens and cache hits of each successful call, in order.
     contexts: Vec<Context>,
+    /// Cache hits of the harness's own requests (e.g. compaction summaries); counted in the
+    /// run's cost but not in the conversation's context sizes. `None` once one was not reported.
+    aux_cache_hits: Option<u64>,
     model_calls: u32,
     actual_model: Option<String>,
     pub events: Vec<ToolEvent>,
+    /// Session turn (1-based) written next to each raw entry; `None` outside session runs.
+    pub turn: Option<u32>,
     pub final_output: Option<String>,
     pub termination: Termination,
     pub error: Option<String>,
@@ -39,9 +44,11 @@ impl RunLog {
             output_tokens: 0,
             usage_complete: true,
             contexts: Vec::new(),
+            aux_cache_hits: Some(0),
             model_calls: 0,
             actual_model: None,
             events: Vec::new(),
+            turn: None,
             final_output: None,
             termination: Termination::Completed,
             error: None,
@@ -65,10 +72,58 @@ impl RunLog {
         if self.actual_model.is_none() {
             self.actual_model = Some(exchange.response.model.clone());
         }
-        self.raw.push(json!({
+        let mut entry = json!({
             "request": exchange.request,
             "response": exchange.response_json,
-        }));
+        });
+        if let Some(turn) = self.turn {
+            entry["turn"] = json!(turn);
+        }
+        self.raw.push(entry);
+    }
+
+    /// Records a request the harness made for itself, tagged with `purpose` in the raw log.
+    /// It counts toward model calls and tokens, not toward the conversation's context sizes.
+    pub fn auxiliary(&mut self, exchange: &Exchange, purpose: &str) {
+        self.model_calls += 1;
+        match &exchange.response.usage {
+            Some(usage) => {
+                self.input_tokens += usage.prompt_tokens;
+                self.output_tokens += usage.completion_tokens;
+                self.aux_cache_hits = self
+                    .aux_cache_hits
+                    .zip(usage.prompt_cache_hit_tokens)
+                    .map(|(a, b)| a + b);
+            }
+            None => self.usage_complete = false,
+        }
+        let mut entry = json!({
+            "purpose": purpose,
+            "request": exchange.request,
+            "response": exchange.response_json,
+        });
+        if let Some(turn) = self.turn {
+            entry["turn"] = json!(turn);
+        }
+        self.raw.push(entry);
+    }
+
+    /// A failed auxiliary request: logged, but the run goes on.
+    pub fn auxiliary_failed(&mut self, purpose: &str, error: &str) {
+        self.model_calls += 1;
+        self.usage_complete = false;
+        let mut entry = json!({ "purpose": purpose, "error": error });
+        if let Some(turn) = self.turn {
+            entry["turn"] = json!(turn);
+        }
+        self.raw.push(entry);
+    }
+
+    /// Why the last compaction result was not used, attached to its raw entry.
+    pub fn compaction_note(&mut self, reason: &str) {
+        if let Some(entry) = self.raw.last_mut() {
+            entry["skipped"] = json!(reason);
+        }
     }
 
     /// Records a failed model call and ends the run.
@@ -80,7 +135,11 @@ impl RunLog {
             ApiError::Http(_) => Termination::Error,
         };
         self.error = Some(err.to_string());
-        self.raw.push(json!({ "error": err.to_string() }));
+        let mut entry = json!({ "error": err.to_string() });
+        if let Some(turn) = self.turn {
+            entry["turn"] = json!(turn);
+        }
+        self.raw.push(entry);
     }
 
     /// One line describing the context of the last call, e.g.
@@ -188,7 +247,7 @@ impl RunLog {
     /// Unavailable unless every successful call reported its cache hits and none failed.
     fn cached_metric(&self) -> Metric {
         let hits: Option<u64> = self.contexts.iter().map(|c| c.cache_hit).sum();
-        match hits {
+        match hits.zip(self.aux_cache_hits).map(|(a, b)| a + b) {
             Some(hits) if self.usage_complete => measured(hits as f64),
             _ => Metric::unavailable(),
         }
@@ -351,5 +410,18 @@ mod tests {
         assert_eq!(thousands(999), "999");
         assert_eq!(thousands(4591), "4,591");
         assert_eq!(thousands(1_000_000), "1,000,000");
+    }
+
+    #[test]
+    fn raw_entries_carry_the_session_turn() {
+        let mut log = RunLog::new();
+        log.exchange(&exchange(usage(462, Some(0))));
+        log.turn = Some(2);
+        log.exchange(&exchange(usage(900, Some(512))));
+        log.failed(&ApiError::Timeout("slow".into()));
+
+        assert_eq!(log.raw[0].get("turn"), None);
+        assert_eq!(log.raw[1]["turn"], 2);
+        assert_eq!(log.raw[2]["turn"], 2);
     }
 }

@@ -37,7 +37,8 @@
     - [Codex의 context budget](labs/h05-context-budget/codex.md)
     - [DeepSeek Harness의 context budget](labs/h05-context-budget/deepseek-harness.md)
     - [FAQ](labs/h05-context-budget/faq.md)
-- [H6 Compaction]()
+- [H6 Compaction](labs/h06-compaction/README.md)
+    - [FAQ](labs/h06-compaction/faq.md)
 
 # Part IV — Safety and Runtime Reliability
 

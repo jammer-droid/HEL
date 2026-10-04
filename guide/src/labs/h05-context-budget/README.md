@@ -14,30 +14,30 @@ Codex와 DeepSeek Harness는 context budget을 어떻게 측정·배분하고, �
 
 ### 논문이 본 context budget
 
-[Part III 개요](../../parts/part3-context.md)에서 본 것처럼 논문이 조사한 시스템의 대부분은 context 사용량이 정해 둔 제한에 도달하면 대화를 요약한다. 그 지점을 정하려면 두 가지가 먼저 필요하다. 지금 context를 얼마나 쓰는지 측정하는 방법과, model의 context window 중 어디까지를 대화 기록에 쓸지 정한 기준이다.
+[Part III 개요](../../parts/part3-context.md)에서 본 것처럼 논문이 조사한 시스템의 대부분은 context 사용량이 정해 둔 제한에 도달하면 compaction(컨텍스트 압축)을 한다. 오래된 대화를 model이 쓴 요약으로 바꾸는 방식이다. 그 지점을 정하려면 두 가지가 먼저 필요하다. 지금 context를 얼마나 쓰는지 측정하는 방법과, model의 context window 중 어디까지를 대화 기록에 쓸지 정한 기준이다.
 
-[§9.5](https://arxiv.org/html/2609.00006v1#S9.SS5)에 정리된 기준은 시스템마다 다르다. Claude Code는 window보다 13,000 token 아래, Gemini CLI는 window의 50%, OpenCode는 input 한도에서 출력 몫을 뺀 지점에서 요약을 시작한다. 사용량을 재는 방법도 다르다. OpenCode는 tokenizer 없이 글자 수를 4로 나누고, Gemini CLI는 API가 돌려준 token 수로 추정값을 보정한다. Codex는 기준과 별개로 thread마다 token budget을 두고 남은 양을 model에게 알린다(현재 Codex 소스에서는 기본으로 꺼진 실험 기능이다).
+[§9.5](https://arxiv.org/html/2609.00006v1#S9.SS5)에 정리된 기준은 시스템마다 다르다. Claude Code는 window보다 13,000 token 아래, Gemini CLI는 window의 50%, OpenCode는 input 한도에서 출력 몫을 뺀 지점에서 압축을 시작한다. 사용량을 재는 방법도 다르다. OpenCode는 tokenizer 없이 글자 수를 4로 나누고, Gemini CLI는 API가 돌려준 token 수로 추정값을 보정한다. Codex는 기준과 별개로 thread마다 token budget을 두고 남은 양을 model에게 알린다(현재 Codex 소스에서는 기본으로 꺼진 실험 기능이다).
 
-[Recommendation 7](https://arxiv.org/html/2609.00006v1#S16.SS5)은 window보다 일정량 아래에서 요약을 시작하고, 최근 기록은 원문으로 남기라고 권한다. [§16.10](https://arxiv.org/html/2609.00006v1#S16.SS10)의 최소 harness 예시는 tool 출력을 25,000자에서 자르고, 글자 수로 추정한 token이 120,000을 넘으면 요약하며 최근 30%를 남긴다. 이 수치들은 각 시스템이 정한 값이고, 논문은 어떤 값이 더 나은지 비교하지 않았다. 그래서 이번 Lab에서는 실제 harness가 이 값을 어떻게 정하고 무엇을 남기는지 소스에서 직접 확인한다.
+[Recommendation 7](https://arxiv.org/html/2609.00006v1#S16.SS5)은 window보다 일정량 아래에서 압축을 시작하고, 최근 기록은 원문으로 남기라고 권한다. [§16.10](https://arxiv.org/html/2609.00006v1#S16.SS10)의 최소 harness 예시는 tool 출력을 25,000자에서 자르고, 글자 수로 추정한 token이 120,000을 넘으면 압축하며 최근 30%를 남긴다. 이 수치들은 각 시스템이 정한 값이고, 논문은 어떤 값이 더 나은지 비교하지 않았다. 그래서 이번 Lab에서는 실제 harness가 이 값을 어떻게 정하고 무엇을 남기는지 소스에서 직접 확인한다.
 
 ### 이번 Lab에서 다룰 context budget
 
-context budget(컨텍스트 예산)은 model의 context window를 어디에 얼마나 사용할지 분배하는 예산을 의미한다. 매 요청에는 system prompt와 tool 정의처럼 고정된 부분, 지금까지의 대화 기록, model이 이번에 쓸 출력 자리가 함께 들어간다. 대화 기록이 늘어나면 남은 공간이 줄고, 한도에 도달하면 harness는 기록 일부를 줄이거나 요약해야 한다.
+context budget(컨텍스트 예산)은 model의 context window를 어디에 얼마나 사용할지 분배하는 예산을 의미한다. 매 요청에는 system prompt와 tool 정의처럼 고정된 부분, 지금까지의 대화 기록, model이 이번에 쓸 출력 자리가 함께 들어간다. 대화 기록이 늘어나면 남은 공간이 줄고, 한도에 도달하면 harness는 기록 일부를 줄이거나 압축해야 한다.
 
 이번에는 Codex와 DeepSeek Harness의 소스를 읽고 다음을 비교한다.
 
 - 지금 사용 중인 context를 어떻게 측정하는가
-- window 중 어디까지를 쓰고, 어디서 요약을 시작하는가
+- window 중 어디까지를 쓰고, 어디서 압축을 시작하는가
 - 큰 tool 출력을 어떻게 줄이는가
-- 요약할 때 무엇을 원문으로 남기고 무엇을 버리는가
+- 압축할 때 무엇을 원문으로 남기고 무엇을 버리는가
 
-두 harness는 모두 소스가 공개되어 있다. Codex는 Rust로 작성되어 `hel`과 구조를 비교하기 쉽고, DeepSeek Harness는 `hel`과 같은 DeepSeek API를 사용한다. 요약을 실제로 구현하고 실행해 보는 것은 H6에서 하고, 이번에는 `hel`이 호출마다 사용한 context 크기와 cache가 적용된 token을 기록하도록 만든다. H6에서 요약을 구현한 뒤 그 전과 같은 기준으로 비교하려면 이 기록이 먼저 필요하다.
+두 harness는 모두 소스가 공개되어 있다. Codex는 Rust로 작성되어 `hel`과 구조를 비교하기 쉽고, DeepSeek Harness는 `hel`과 같은 DeepSeek API를 사용한다. 압축을 실제로 구현하고 실행해 보는 것은 H6에서 하고, 이번에는 `hel`이 호출마다 사용한 context 크기와 cache가 적용된 token을 기록하도록 만든다. H6에서 압축을 구현한 뒤 그 전과 같은 기준으로 비교하려면 이 기록이 먼저 필요하다.
 
 ### 참고 자료
 
-- [Codex의 context budget](codex.md): 측정, 요약 기준과 시점, 남기는 것, tool 출력 상한, cache (확인한 commit `afb436d`)
+- [Codex의 context budget](codex.md): 측정, 압축 기준과 시점, 남기는 것, tool 출력 상한, cache (확인한 commit `afb436d`)
 - [DeepSeek Harness의 context budget](deepseek-harness.md): 같은 항목 (확인한 commit `5badb15`)
-- **Claude Code**는 소스가 공개되어 있지 않아 [공식 문서](https://code.claude.com/docs/en/costs)로만 확인했다. 한도 근처에서 자동으로 요약하고, `/compact`에 남길 내용을 지시할 수 있으며, `/context`와 `/usage`로 사용량과 cache 통계를 보여 준다(2026-10-04 확인).
+- **Claude Code**는 소스가 공개되어 있지 않아 [공식 문서](https://code.claude.com/docs/en/costs)로만 확인했다. 한도 근처에서 자동으로 압축하고, `/compact`에 남길 내용을 지시할 수 있으며, `/context`와 `/usage`로 사용량과 cache 통계를 보여 준다(2026-10-04 확인).
 
 ## 이번에 해볼 것
 
@@ -133,7 +133,7 @@ H4에서 저장한 실행 기록에서 요청과 응답 하나를 꺼내 실제 
 | 3 | + assistant, tool 결과 1개 | 4,591 | 4,352 | 239 | 2 |
 
 - 첫 호출에서 model은 디렉터리 목록과 저장소 전체 `grep`을 한 번에 요청했다. `grep` 결과가 9,983 bytes여서 두 번째 호출의 context가 462에서 4,409 token으로 늘었다.
-- 두 번째 호출에서는 앞부분 640 token만 cache에 맞았고, 새로 붙은 tool 결과는 모두 cache miss였다. 세 번째 호출에서는 두 번째 호출까지의 내용 4,352 token이 cache에 맞았다. H4 기록 65개 호출의 cache hit 값은 모두 128의 배수였다.
+- 두 번째 호출에서는 앞부분 640 token만 cache hit에 성공했고, 새로 붙은 tool 결과는 모두 cache miss였다. 세 번째 호출에서는 두 번째 호출까지의 내용 4,352 token이 cache hit에 성공했다. H4 기록 65개 호출의 cache hit 값은 모두 128의 배수였다.
 - 세 번째 호출의 출력은 `7` 하나였고, 이 실행은 정답으로 끝났다.
 
 
@@ -158,9 +158,9 @@ H4에서 저장한 실행 기록에서 요청과 응답 하나를 꺼내 실제 
 
 ### 5. harness가 조절할 수 있는 것
 
-window의 크기와 가격은 model이 정한다. harness가 조절할 수 있는 것은 매 요청에 무엇을 얼마나 넣는지와, 그 내용이 cache에 맞는지다.
+window의 크기와 가격은 model이 정한다. harness가 조절할 수 있는 것은 매 요청에 무엇을 얼마나 넣는지와, 그 내용이 cache hit에 성공하는지다.
 
-**cache는 앞부분이 그대로일 때만 맞는다.** DeepSeek의 [context caching](https://api-docs.deepseek.com/guides/kv_cache)은 기본으로 켜져 있고, 요청마다 user 입력이 끝나는 지점과 model 출력이 끝나는 지점을 cache 단위로 저장한다. 그리고 다음 요청이 그 단위 전체와 앞부분부터 똑같아야 hit로 계산된다. 저장에는 몇 초가 걸리고, 쓰지 않으면 몇 시간에서 며칠 사이에 지워진다. 조건이 맞아도 hit가 항상 보장되지는 않는다.
+**cache hit는 앞부분이 그대로일 때만 성공한다.** DeepSeek의 [context caching](https://api-docs.deepseek.com/guides/kv_cache)은 기본으로 켜져 있고, 요청마다 user 입력이 끝나는 지점과 model 출력이 끝나는 지점을 cache 단위로 저장한다. 그리고 다음 요청이 그 단위 전체와 앞부분부터 똑같아야 hit로 계산된다. 저장에는 몇 초가 걸리고, 쓰지 않으면 몇 시간에서 며칠 사이에 지워진다. 조건이 맞아도 hit가 항상 보장되지는 않는다.
 
 §3의 두 번째 호출 cache hit 640 token은 첫 호출의 input 462와 output 186을 합친 648과 비슷하다. 앞 요청의 응답까지 하나의 cache 단위로 저장되고, 대화 기록을 뒤에 덧붙이기만 하면 그 단위가 다음 요청의 앞부분과 일치한다. 반대로 앞쪽의 한 글자라도 바뀌면 그 지점부터 다시 cache miss가 된다.
 
@@ -172,12 +172,12 @@ H4에서 기록한 65개 호출로 보면 다음과 같다.
 | 두 번째 이후 호출 (47개) | 107,334 | 69,888 | 65% |
 | 전체 | 119,031 | 69,888 | 59% |
 
-첫 호출은 18번 모두 cache에 맞지 않았다. system prompt에 들어가는 작업 디렉터리 경로가 실행마다 달라서 앞부분이 실행끼리 같지 않은 것이 원인 중 하나로 보인다. 같은 실행 안의 다음 호출들은 앞 요청을 이어 붙였기 때문에 65%가 맞았다.
+첫 호출은 18번 모두 cache hit에 실패했다. system prompt에 들어가는 작업 디렉터리 경로가 실행마다 달라서 앞부분이 실행끼리 같지 않은 것이 원인 중 하나로 보인다. 같은 실행 안의 다음 호출들은 앞 요청을 이어 붙였기 때문에 input의 65%가 cache hit였다.
 
 **새로 붙는 내용은 한 번은 cache miss다.** 큰 tool 결과는 처음 들어갈 때 miss 가격으로 계산되고, 그 뒤 호출에서는 hit 가격으로 계속 실려 간다. hit 가격이 miss의 50분의 1이어도 window는 그대로 차지한다. 그래서 harness가 다룰 지점은 두 가지다.
 
 - **cache hit 비율**: 앞부분을 바꾸지 않고 뒤에 덧붙인다. 실행마다 달라지는 정보를 앞쪽에 두면 실행 사이의 cache를 잃는다.
-- **input 크기**: 한 번에 들어오는 tool 결과를 제한하고, 쌓인 기록을 줄일 시점을 정한다. 다만 오래된 기록을 지우거나 요약하면 바뀐 지점부터 cache를 다시 만들어야 한다.
+- **input 크기**: 한 번에 들어오는 tool 결과를 제한하고, 쌓인 기록을 줄일 시점을 정한다. 다만 오래된 기록을 지우거나 압축하면 바뀐 지점부터 cache를 다시 만들어야 한다.
 
 두 지점은 서로 부딪친다. input을 줄이려고 기록을 고치면 cache hit 비율이 떨어진다. Codex와 DeepSeek Harness가 이 둘을 어떻게 조절하는지는 다음에 비교한다.
 
@@ -211,12 +211,12 @@ prompt_tokens 최댓값 ──────────────────�
 지금 `hel`은 기록을 뒤에 덧붙이기만 하므로 마지막 호출이 가장 크고 peak와 last가 같다. 둘이 갈라지는 것은 기록을 줄일 때다.
 
 ```text
-호출      1      2      3      4 (요약 뒤)    5
+호출      1      2      3      4 (압축 뒤)    5
 input    462  4,409  4,591    1,200        1,350
                      ▲ peak                    ▲ last
 ```
 
-(요약 뒤의 수치는 설명을 위한 예시다.) peak로는 요약 전에 window를 얼마나 썼는지, last로는 요약 뒤 얼마나 줄어든 상태로 끝났는지 본다.
+(압축 뒤의 수치는 설명을 위한 예시다.) peak로는 압축 전에 window를 얼마나 썼는지, last로는 압축 뒤 얼마나 줄어든 상태로 끝났는지 본다.
 
 `hel`은 응답을 받을 때마다 `prompt_tokens`와 cache hit를 순서대로 쌓는다.
 
@@ -282,15 +282,15 @@ test output::tests::formats_thousands ... ok
 | | Codex | DeepSeek Harness |
 | --- | --- | --- |
 | 현재 context | 마지막 응답의 token 수 + 그 뒤 추가분 추정(bytes ÷ 4) | session 기록으로 계산, 추정은 글자 수 ÷ 4 |
-| 요약 시작 | window의 90% (설정값이 더 작으면 그 값) | window의 80% 또는 window − 출력 예약 − 65,536 중 작은 값 |
+| 압축 시작 | window의 90% (설정값이 더 작으면 그 값) | window의 80% 또는 window − 출력 예약 − 65,536 중 작은 값 |
 | tool 출력이 들어올 때 | 10,000 bytes를 넘으면 가운데를 자름 | 12,500 token을 넘으면 파일로 저장하고 앞·뒤만 보냄 |
-| 요약할 때 남기는 것 | 최근 user 메시지(최대 20,000 token) + 요약 | 최근 구간(window의 약 16%) 원문 + 오래된 구간의 요약 |
+| 압축할 때 남기는 것 | 최근 user 메시지(최대 20,000 token) + 요약 | 최근 구간(window의 약 16%) 원문 + 오래된 구간의 요약 |
 
-**budget 설계.** 두 harness 모두 window 전체를 대화 기록에 쓰지 않는다. 출력 자리와 여유분을 먼저 떼어 두고, 그보다 앞에서 요약을 시작한다. 큰 tool 출력은 기록에 들어가는 순간 상한 안으로 줄인다. 차이는 요약할 때 드러난다. Codex는 model의 응답과 tool 결과를 모두 버리고 사용자 메시지와 요약만 남긴다. DeepSeek Harness는 오래된 구간만 요약하고 최근 작업은 tool 결과까지 원문으로 둔다.
+**budget 설계.** 두 harness 모두 window 전체를 대화 기록에 쓰지 않는다. 출력 자리와 여유분을 먼저 떼어 두고, 그보다 앞에서 압축을 시작한다. 큰 tool 출력은 기록에 들어가는 순간 상한 안으로 줄인다. 차이는 압축할 때 드러난다. Codex는 model의 응답과 tool 결과를 모두 버리고 사용자 메시지와 요약만 남긴다. DeepSeek Harness는 오래된 구간만 요약하고 최근 작업은 tool 결과까지 원문으로 둔다.
 
-**cache를 지키는 방법.** 두 harness 모두 기록을 뒤에 덧붙이기만 하고, 앞부분은 요약할 때까지 고치지 않는다. tool 출력을 들어올 때 미리 줄여 두면 나중에 그 결과를 고칠 일도 줄어든다. Codex는 설정이나 실행 환경이 바뀌어도 앞의 메시지를 고치지 않고 바뀐 부분만 새 메시지로 덧붙인다. DeepSeek Harness는 요약 요청 자체가 cache에 맞도록 원래 대화와 같은 앞부분으로 보내고, 오래된 tool 결과를 줄이는 작업도 요약 기준을 넘었을 때만 한다.
+**cache를 지키는 방법.** 두 harness 모두 기록을 뒤에 덧붙이기만 하고, 앞부분은 압축할 때까지 고치지 않는다. tool 출력을 들어올 때 미리 줄여 두면 나중에 그 결과를 고칠 일도 줄어든다. Codex는 설정이나 실행 환경이 바뀌어도 앞의 메시지를 고치지 않고 바뀐 부분만 새 메시지로 덧붙인다. DeepSeek Harness는 요약 요청 자체가 cache hit에 성공하도록 원래 대화와 같은 앞부분으로 보내고, 오래된 tool 결과를 줄이는 작업도 압축 기준을 넘었을 때만 한다.
 
-요약하는 순간에는 두 harness 모두 cache를 잃는다. Codex는 기록 전체를 다시 만들어서 cache를 처음부터 쌓고, DeepSeek Harness는 바뀐 구간부터 다시 쌓는다. 기록을 많이 줄일수록 window는 넉넉해지지만 다시 계산할 부분이 커진다.
+압축하는 순간에는 두 harness 모두 cache를 잃는다. Codex는 기록 전체를 다시 만들어서 cache를 처음부터 쌓고, DeepSeek Harness는 바뀐 구간부터 다시 쌓는다. 기록을 많이 줄일수록 window는 넉넉해지지만 다시 계산할 부분이 커진다.
 
 ## 돌아보기
 
@@ -313,20 +313,20 @@ test output::tests::formats_thousands ... ok
 | 3. 이전 tool 결과 줄이기 | 기준을 넘었을 때 | 8,192자를 넘는 이전 tool 결과를 앞 4,096자와 뒤 1,024자만 남긴다. 기준 아래로 내려가면 여기서 끝낸다 | harness 코드 |
 | 4. 오래된 구간 요약 | 그래도 기준을 넘을 때 | 오래된 구간을 model에게 따로 보내 요약을 받고, 그 구간을 요약 하나로 바꾼다 | model |
 
-1번과 3번은 harness 코드가 정해진 길이에서 문자열을 자르는 일이다. 4번의 요약은 model이 대화를 읽고 새로 쓰는 글이다. compaction에서 말하는 요약은 이 4번을 가리킨다. harness는 system prompt, tool 정의, 요약할 구간을 원래 대화와 똑같이 보내고 마지막에 요약 지시를 붙인다. model이 돌려준 답(`content`)이 요약이 되고, 대화를 이어 가는 model은 이 요청을 보지 못한다. 그래서 요약에는 API 호출 한 번의 비용과 시간이 들고, 무엇을 남길지는 model이 판단하며, 같은 대화라도 실행마다 다른 요약이 나올 수 있다.
+1번과 3번은 harness 코드가 정해진 길이에서 문자열을 자르는 일이다. 4번의 요약은 model이 대화를 읽고 새로 쓰는 글이다. compaction(컨텍스트 압축)은 1~4번 전체를 가리키고, 그중 model이 글을 새로 쓰는 단계가 4번의 요약이다. harness는 system prompt, tool 정의, 요약할 구간을 원래 대화와 똑같이 보내고 마지막에 요약 지시를 붙인다. model이 돌려준 답(`content`)이 요약이 되고, 대화를 이어 가는 model은 이 요청을 보지 못한다. 그래서 요약에는 API 호출 한 번의 비용과 시간이 들고, 무엇을 남길지는 model이 판단하며, 같은 대화라도 실행마다 다른 요약이 나올 수 있다.
 
-`deepseek-flash`의 window(1M)로 계산하면 요약 기준은 약 800K token이어서 지금까지의 작업은 닿지 않는다. H6에서는 기준을 낮춰 요약을 일찍 일으키고, 그 뒤에도 작업을 이어 갈 수 있는지 확인한다.
+`deepseek-flash`의 window(1M)로 계산하면 압축 기준은 약 800K token이어서 지금까지의 작업은 닿지 않는다. H6에서는 기준을 낮춰 압축을 일찍 일으키고, 그 뒤에도 작업을 이어 갈 수 있는지 확인한다.
 
 ### 트레이드오프
 
-오래된 구간을 요약으로 바꾸면 그 뒤의 최근 구간은 내용이 같아도 앞이 바뀌었기 때문에 한 번은 cache miss로 다시 계산된다. 요약 요청 자체도 비용이다. 최근 구간을 원문으로 남기는 만큼 한 번에 줄어드는 양이 작아서, Codex처럼 거의 모두 버리는 방식보다 요약이 자주 일어날 수 있다.
+오래된 구간을 요약으로 바꾸면 그 뒤의 최근 구간은 내용이 같아도 앞이 바뀌었기 때문에 한 번은 cache miss로 다시 계산된다. 요약 요청 자체도 비용이다. 최근 구간을 원문으로 남기는 만큼 한 번에 줄어드는 양이 작아서, Codex처럼 거의 모두 버리는 방식보다 압축이 자주 일어날 수 있다.
 
 ### 논문의 내용 또는 다른 harness와 비교하면
 
-논문의 [Recommendation 7](https://arxiv.org/html/2609.00006v1#S16.SS5)은 window보다 일정량 아래에서 요약을 시작하고, 최근 기록은 원문으로 남기고, 이전 요약에 이어 붙이라고 권한다. 정한 구조는 이 권고와 같다. 논문은 기준값을 비교하지 않았으므로, 이번에는 같은 DeepSeek API를 쓰는 harness가 cache를 기준으로 정한 값을 따랐다.
+논문의 [Recommendation 7](https://arxiv.org/html/2609.00006v1#S16.SS5)은 window보다 일정량 아래에서 압축을 시작하고, 최근 기록은 원문으로 남기고, 이전 요약에 이어 붙이라고 권한다. 정한 구조는 이 권고와 같다. 논문은 기준값을 비교하지 않았으므로, 이번에는 같은 DeepSeek API를 쓰는 harness가 cache를 기준으로 정한 값을 따랐다.
 
-Codex는 요약할 때 대화 전체를 model에게 보내고, 사용자 메시지와 요약만 남긴 채 나머지를 버린다. 기록이 크게 줄고 구조가 단순하지만, 최근에 읽은 파일 내용도 함께 사라지고 cache를 처음부터 다시 쌓는다.
+Codex는 압축할 때 대화 전체를 model에게 보내고, 사용자 메시지와 요약만 남긴 채 나머지를 버린다. 기록이 크게 줄고 구조가 단순하지만, 최근에 읽은 파일 내용도 함께 사라지고 cache를 처음부터 다시 쌓는다.
 
-DeepSeek Harness는 오래된 구간만 요약하고, 요약 요청도 기존 cache에 맞도록 보낸다. 요약 전에 tool 결과를 줄여 보고, 그것으로 충분하면 model을 부르지 않는다. 대신 구간을 고를 때 tool 호출과 결과를 떼지 않아야 하고, 이전 요약과 합치는 지시까지 다뤄야 한다.
+DeepSeek Harness는 오래된 구간만 요약하고, 요약 요청도 기존 cache hit에 성공하도록 보낸다. 요약 전에 tool 결과를 줄여 보고, 그것으로 충분하면 model을 부르지 않는다. 대신 구간을 고를 때 tool 호출과 결과를 떼지 않아야 하고, 이전 요약과 합치는 지시까지 다뤄야 한다.
 
-Claude Code도 공식 문서상 한도 근처에서 자동으로 요약하고 `/compact`로 남길 내용을 지시할 수 있지만, 기준과 남기는 범위는 소스로 확인할 수 없었다.
+Claude Code도 공식 문서상 한도 근처에서 자동으로 압축하고 `/compact`로 남길 내용을 지시할 수 있지만, 기준과 남기는 범위는 소스로 확인할 수 없었다.

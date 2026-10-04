@@ -1,0 +1,45 @@
+# H6 측정 정의. baseline은 compaction 구현 전에 실행한다.
+lab: h06
+title: Compaction
+revision: 1
+description: >
+  Run a six-turn session that reads four service files and later asks for remembered values,
+  with and without early forced compaction. Compare per-request context size and cache hits
+  around the compaction point, and whether the final answer still holds.
+
+model:
+  provider: deepseek
+  id: deepseek-flash
+  params: {}
+
+budget:
+  max_turns: 10
+  timeout_seconds: 300
+  max_output_tokens: 8192
+
+conditions:
+  - name: baseline
+    harness: hel
+    settings:
+      tools: [bash]
+      env: true
+      context_file: HEL.md
+  - name: variant-compaction
+    harness: hel
+    settings:
+      tools: [bash]
+      env: true
+      context_file: HEL.md
+      compaction:
+        at_tokens: 4000
+        keep_recent_tokens: 1500
+
+tasks:
+  - session-recall-01
+
+repetitions: 3
+
+rubric:
+  output-exact: The last turn's answer equals OWNER:SUM exactly; only one trailing newline on either side is ignored. Earlier turns are observed, not judged.
+  cache-trajectory: Compare cache hit share and context size by request position. Compaction (summary) requests are listed apart from the conversation requests.
+  recall: In raw messages, check whether turn 4 and turn 6 were answered from the conversation or summary, or whether the model read files again.

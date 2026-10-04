@@ -1,0 +1,17 @@
+id: session-recall-01
+eval_version: eval-v5
+description: 한 세션에서 설정 파일 4개의 port를 차례로 묻고, 앞에서 읽은 owner와 port 합계를 기억해 답한다
+turns:
+  - Read services/alpha.toml and reply with only the value of port in its [service] section.
+  - Read services/bravo.toml and reply with only the value of port in its [service] section.
+  - Read services/charlie.toml and reply with only the value of port in its [service] section.
+  - Without reading any file again, reply with only the owner of the alpha service.
+  - Read services/delta.toml and reply with only the value of port in its [service] section.
+  - >-
+    Without reading any file again, reply in the form OWNER:SUM, where OWNER is the owner of the
+    alpha service and SUM is the sum of the four ports you reported. Reply with nothing else.
+fixture: fixture/
+checks:
+  - id: output-exact
+    type: output_exact_match
+    expected_file: expected.txt

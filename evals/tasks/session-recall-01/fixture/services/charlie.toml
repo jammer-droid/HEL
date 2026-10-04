@@ -1,0 +1,72 @@
+# charlie service configuration
+# Maintained by the charlie team. Comments below are operational notes.
+
+[service]
+name = "charlie"
+port = 7530
+owner = "ines"
+region = "eu-west"
+
+[notes]
+# note 001: this entry documents request routing for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_001 = "request routing reviewed in cycle 32"
+# note 002: this entry summarizes request routing for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_002 = "request routing reviewed in cycle 13"
+# note 003: this entry documents retry policy for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_003 = "retry policy reviewed in cycle 1"
+# note 004: this entry controls queue draining for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_004 = "queue draining reviewed in cycle 28"
+# note 005: this entry limits connection pooling for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_005 = "connection pooling reviewed in cycle 32"
+# note 006: this entry tracks schema migration for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_006 = "schema migration reviewed in cycle 18"
+# note 007: this entry summarizes rate limiting for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_007 = "rate limiting reviewed in cycle 8"
+# note 008: this entry controls alert thresholds for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_008 = "alert thresholds reviewed in cycle 12"
+# note 009: this entry documents alert thresholds for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_009 = "alert thresholds reviewed in cycle 30"
+# note 010: this entry limits connection pooling for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_010 = "connection pooling reviewed in cycle 17"
+# note 011: this entry summarizes queue draining for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_011 = "queue draining reviewed in cycle 16"
+# note 012: this entry schedules log retention for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_012 = "log retention reviewed in cycle 34"
+# note 013: this entry limits request routing for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_013 = "request routing reviewed in cycle 33"
+# note 014: this entry describes request routing for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_014 = "request routing reviewed in cycle 27"
+# note 015: this entry records schema migration for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_015 = "schema migration reviewed in cycle 14"
+# note 016: this entry documents deployment windows for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_016 = "deployment windows reviewed in cycle 22"
+# note 017: this entry summarizes health checks for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_017 = "health checks reviewed in cycle 29"
+# note 018: this entry documents alert thresholds for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_018 = "alert thresholds reviewed in cycle 14"
+# note 019: this entry describes request routing for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_019 = "request routing reviewed in cycle 18"
+# note 020: this entry records secret rotation for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_020 = "secret rotation reviewed in cycle 15"
+# note 021: this entry limits alert thresholds for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_021 = "alert thresholds reviewed in cycle 29"
+# note 022: this entry records rate limiting for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_022 = "rate limiting reviewed in cycle 13"
+# note 023: this entry describes schema migration for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_023 = "schema migration reviewed in cycle 20"
+# note 024: this entry tracks connection pooling for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_024 = "connection pooling reviewed in cycle 16"
+# note 025: this entry limits rate limiting for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_025 = "rate limiting reviewed in cycle 15"
+# note 026: this entry documents queue draining for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_026 = "queue draining reviewed in cycle 10"
+# note 027: this entry limits backup rotation for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_027 = "backup rotation reviewed in cycle 27"
+# note 028: this entry describes request routing for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_028 = "request routing reviewed in cycle 28"
+# note 029: this entry tracks request routing for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_029 = "request routing reviewed in cycle 25"
+# note 030: this entry documents retry policy for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_030 = "retry policy reviewed in cycle 32"
+# note 031: this entry summarizes schema migration for charlie; review it during the quarterly audit and keep the change log in the team wiki.
+note_031 = "schema migration reviewed in cycle 25"

@@ -12,12 +12,19 @@
 //!   hel [--tools <a,b>] [--no-env] [--context-file <name> | --no-context-file]
 //!   hel --instruction <TEXT> [--tools <a,b>] [--no-env] [--context-file <name> | --no-context-file]
 //!       [--context <run-context.json> --record <record.json>]
+//!   hel --turns-file <turns.json> [same options as --instruction]
 //!
 //! Without `--instruction`, hel runs interactively: each line typed is sent to the model with the
 //! conversation so far. `--context` and `--record` are used by the eval runner. Without them, hel
-//! only prints the answer.
+//! only prints the answer. `--turns-file` (H6) reads a JSON list of instructions and sends them one
+//! after another in one session, writing a single record whose final output is the last answer.
+//! Context management (H6) is on by default with DeepSeek Harness's thresholds for a 1M window:
+//! large tool results go to a file, and over the threshold old history is pruned and summarized by
+//! the model. `--compact-at <tokens> --keep-recent <tokens>` change the thresholds and
+//! `--no-compaction` turns it off.
 
 mod api;
+mod context;
 mod output;
 mod prompt;
 mod search;
@@ -41,11 +48,35 @@ use tools::Toolset;
 
 struct Args {
     instruction: Option<String>,
+    turns_file: Option<PathBuf>,
     tools: Toolset,
     env: bool,
     context_file: Option<String>,
     context: Option<PathBuf>,
     record: Option<PathBuf>,
+    compaction: Compaction,
+}
+
+/// How context management is chosen on the command line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Compaction {
+    /// DeepSeek Harness's thresholds for the model window and output limit.
+    Default,
+    Custom(context::Policy),
+    Off,
+}
+
+impl Compaction {
+    fn policy(self, max_output_tokens: u32) -> Option<context::Policy> {
+        match self {
+            Compaction::Default => Some(context::Policy::deepseek_default(
+                context::DEFAULT_WINDOW,
+                u64::from(max_output_tokens),
+            )),
+            Compaction::Custom(policy) => Some(policy),
+            Compaction::Off => None,
+        }
+    }
 }
 
 fn main() -> ExitCode {
@@ -74,29 +105,60 @@ fn run() -> Result<(), Box<dyn Error>> {
     )?;
     let workdir = env::current_dir()?;
     let system = prompt::system_message(args.env, args.context_file.as_deref(), &workdir);
-    let Some(instruction) = &args.instruction else {
-        return chat(&client, &workdir, &args.tools, system, ctx.budget.max_turns);
+    let compaction = args.compaction.policy(ctx.budget.max_output_tokens);
+    let inputs: Vec<String> = match (&args.instruction, &args.turns_file) {
+        (Some(instruction), _) => vec![instruction.clone()],
+        (None, Some(path)) => read_turns(path)?,
+        (None, None) => {
+            return chat(
+                &client,
+                &workdir,
+                &args.tools,
+                system,
+                ctx.budget.max_turns,
+                compaction.as_ref(),
+            );
+        }
     };
+    let session = args.turns_file.is_some();
 
     let started = SystemTime::now();
     let clock = Instant::now();
     let mut log = RunLog::new();
 
     let mut messages: Vec<Value> = system.into_iter().collect();
-    messages.push(json!({ "role": "user", "content": instruction }));
-    run_loop(
-        &client,
-        &workdir,
-        &args.tools,
-        &mut messages,
-        ctx.budget.max_turns,
-        &mut log,
-    );
+    let mut meter = context::Meter::default();
+    for (index, input) in inputs.iter().enumerate() {
+        if session {
+            log.turn = Some(index as u32 + 1);
+        }
+        // Only the last turn's answer is the run's output; a failed turn must not inherit one.
+        log.final_output = None;
+        messages.push(json!({ "role": "user", "content": input }));
+        run_loop(
+            &Session {
+                client: &client,
+                workdir: &workdir,
+                tools: &args.tools,
+                compaction: compaction.as_ref(),
+            },
+            &mut messages,
+            &mut meter,
+            ctx.budget.max_turns,
+            &mut log,
+        );
+        if session && let Some(output) = &log.final_output {
+            println!("[turn {}] {output}", index + 1);
+        }
+        if log.termination != Termination::Completed || log.error.is_some() {
+            break;
+        }
+    }
 
     let wall_time_ms = clock.elapsed().as_millis();
     let ended = SystemTime::now();
 
-    if let Some(output) = &log.final_output {
+    if !session && let Some(output) = &log.final_output {
         println!("{output}");
     }
     if let Some(error) = &log.error {
@@ -116,9 +178,17 @@ fn chat(
     tools: &Toolset,
     system: Option<Value>,
     max_turns: u32,
+    compaction: Option<&context::Policy>,
 ) -> Result<(), Box<dyn Error>> {
     let stdin = io::stdin();
     let mut messages: Vec<Value> = system.into_iter().collect();
+    let mut meter = context::Meter::default();
+    let session = Session {
+        client,
+        workdir,
+        tools,
+        compaction,
+    };
     eprintln!("hel — type /exit or press Ctrl-D to quit");
     loop {
         print!("> ");
@@ -138,7 +208,7 @@ fn chat(
 
         messages.push(json!({ "role": "user", "content": input }));
         let mut log = RunLog::new();
-        run_loop(client, workdir, tools, &mut messages, max_turns, &mut log);
+        run_loop(&session, &mut messages, &mut meter, max_turns, &mut log);
 
         for event in &log.events {
             let status = if event.ok == Some(false) {
@@ -165,15 +235,33 @@ fn chat(
 
 /// Calls the model until it answers without a tool call, an error occurs, or `max_turns`
 /// model calls have been made.
+/// What one model ↔ tool loop needs besides the conversation.
+struct Session<'a> {
+    client: &'a api::Client,
+    workdir: &'a Path,
+    tools: &'a Toolset,
+    compaction: Option<&'a context::Policy>,
+}
+
 fn run_loop(
-    client: &api::Client,
-    workdir: &Path,
-    tools: &Toolset,
+    session: &Session,
     messages: &mut Vec<Value>,
+    meter: &mut context::Meter,
     max_turns: u32,
     log: &mut RunLog,
 ) {
+    let Session {
+        client,
+        workdir,
+        tools,
+        compaction,
+    } = *session;
     for _ in 0..max_turns {
+        if let Some(policy) = compaction {
+            context::before_request(messages, policy, meter, log, &mut |request| {
+                client.complete(request, Some(tools.definitions()))
+            });
+        }
         let exchange = match client.complete(messages, Some(tools.definitions())) {
             Ok(exchange) => exchange,
             Err(err) => {
@@ -182,6 +270,9 @@ fn run_loop(
             }
         };
         log.exchange(&exchange);
+        if let Some(usage) = &exchange.response.usage {
+            meter.observed(messages.len(), usage.prompt_tokens);
+        }
         let Some(choice) = exchange.response.choices.first() else {
             log.termination = Termination::Error;
             log.error = Some("response has no choices".to_string());
@@ -225,15 +316,43 @@ fn run_loop(
                 args,
                 ok: Some(result.is_ok()),
             });
-            let content = result.unwrap_or_else(|err| format!("error: {err}"));
+            let mut content = result.unwrap_or_else(|err| format!("error: {err}"));
+            if compaction.is_some() {
+                content = context::spill(content, name);
+            }
             messages.push(json!({ "role": "tool", "tool_call_id": id, "content": content }));
         }
     }
     log.termination = Termination::MaxTurns;
 }
 
+/// A positive token count for `flag`.
+fn tokens(flag: &str, value: &str) -> Result<u64, String> {
+    value.parse::<u64>().ok().filter(|n| *n > 0).ok_or(format!(
+        "{flag} needs a positive number of tokens, got {value:?}"
+    ))
+}
+
+/// Reads a JSON list of non-empty instructions.
+fn read_turns(path: &Path) -> Result<Vec<String>, Box<dyn Error>> {
+    let turns: Vec<String> = serde_json::from_str(&fs::read_to_string(path)?)
+        .map_err(|e| format!("{}: expected a JSON list of strings: {e}", path.display()))?;
+    if turns.is_empty() || turns.iter().any(|t| t.trim().is_empty()) {
+        return Err(format!(
+            "{}: turns must be a non-empty list of instructions",
+            path.display()
+        )
+        .into());
+    }
+    Ok(turns)
+}
+
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut instruction = None;
+    let mut turns_file = None;
+    let mut compact_at = None;
+    let mut keep_recent = None;
+    let mut no_compaction = false;
     let mut tools = None;
     let mut env = true;
     let mut context_file = Some(prompt::DEFAULT_CONTEXT_FILE.to_string());
@@ -243,6 +362,10 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
         let mut value = || args.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
             "--instruction" => instruction = Some(value()?),
+            "--turns-file" => turns_file = Some(PathBuf::from(value()?)),
+            "--compact-at" => compact_at = Some(tokens(&flag, &value()?)?),
+            "--keep-recent" => keep_recent = Some(tokens(&flag, &value()?)?),
+            "--no-compaction" => no_compaction = true,
             "--tools" => {
                 let list = value()?;
                 let names: Vec<&str> = list.split(',').collect();
@@ -260,8 +383,23 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     if record.is_some() && context.is_none() {
         return Err("--record needs --context".to_string());
     }
-    if context.is_some() && instruction.is_none() {
-        return Err("--context needs --instruction".to_string());
+    let compaction = match (compact_at, keep_recent) {
+        (None, None) if no_compaction => Compaction::Off,
+        (None, None) => Compaction::Default,
+        _ if no_compaction => {
+            return Err("--no-compaction cannot be combined with --compact-at".to_string());
+        }
+        (Some(at), Some(keep_recent)) if keep_recent < at => {
+            Compaction::Custom(context::Policy { at, keep_recent })
+        }
+        (Some(_), Some(_)) => return Err("--keep-recent must be below --compact-at".to_string()),
+        _ => return Err("--compact-at and --keep-recent go together".to_string()),
+    };
+    if instruction.is_some() && turns_file.is_some() {
+        return Err("use either --instruction or --turns-file".to_string());
+    }
+    if context.is_some() && instruction.is_none() && turns_file.is_none() {
+        return Err("--context needs --instruction or --turns-file".to_string());
     }
     let tools = match tools {
         Some(tools) => tools,
@@ -269,6 +407,8 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     };
     Ok(Args {
         instruction,
+        turns_file,
+        compaction,
         tools,
         env,
         context_file,
@@ -358,5 +498,67 @@ mod tests {
         assert_eq!(args.context_file.as_deref(), Some("NOTES.md"));
         assert_eq!(parse(&["--no-context-file"]).unwrap().context_file, None);
         assert!(parse(&["--context-file"]).is_err());
+    }
+
+    #[test]
+    fn turns_file_replaces_instruction_for_session_runs() {
+        let args = parse(&["--turns-file", "turns.json", "--context", "c.json"]).unwrap();
+        assert_eq!(args.turns_file, Some(PathBuf::from("turns.json")));
+        let err = parse(&["--instruction", "hi", "--turns-file", "t.json"])
+            .err()
+            .unwrap();
+        assert!(
+            err.contains("either --instruction or --turns-file"),
+            "{err}"
+        );
+        assert!(parse(&["--context", "c.json"]).is_err());
+    }
+
+    #[test]
+    fn reads_a_json_list_of_turns() {
+        let dir = env::temp_dir().join(format!("hel-turns-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("turns.json");
+
+        fs::write(&path, r#"["Read a.txt", "What was in it?"]"#).unwrap();
+        assert_eq!(
+            read_turns(&path).unwrap(),
+            ["Read a.txt", "What was in it?"]
+        );
+
+        for bad in ["[]", r#"["ok", " "]"#, r#"{"turns": []}"#] {
+            fs::write(&path, bad).unwrap();
+            assert!(read_turns(&path).is_err(), "{bad}");
+        }
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn compaction_flags_go_together() {
+        assert_eq!(parse(&[]).unwrap().compaction, Compaction::Default);
+        assert_eq!(
+            parse(&["--no-compaction"]).unwrap().compaction,
+            Compaction::Off
+        );
+        let args = parse(&["--compact-at", "4000", "--keep-recent", "1500"]).unwrap();
+        assert_eq!(
+            args.compaction,
+            Compaction::Custom(context::Policy {
+                at: 4000,
+                keep_recent: 1500
+            })
+        );
+        assert!(parse(&["--no-compaction", "--compact-at", "2", "--keep-recent", "1"]).is_err());
+        assert_eq!(
+            Compaction::Default.policy(8192),
+            Some(context::Policy::deepseek_default(
+                context::DEFAULT_WINDOW,
+                8192
+            ))
+        );
+        assert_eq!(Compaction::Off.policy(8192), None);
+        assert!(parse(&["--compact-at", "4000"]).is_err());
+        assert!(parse(&["--compact-at", "1000", "--keep-recent", "1000"]).is_err());
+        assert!(parse(&["--compact-at", "0", "--keep-recent", "0"]).is_err());
     }
 }

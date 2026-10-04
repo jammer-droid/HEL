@@ -126,7 +126,42 @@ fn hel_args(settings: &Value) -> Result<Vec<String>, Box<dyn Error>> {
             );
         }
     }
+    args.extend(compaction_args(settings)?);
     Ok(args)
+}
+
+/// `compaction: { at_tokens: N, keep_recent_tokens: M }` (H6) becomes
+/// `--compact-at N --keep-recent M`; `compaction: false` becomes `--no-compaction`.
+/// No setting, no flag (hel's default).
+fn compaction_args(settings: &Value) -> Result<Vec<String>, Box<dyn Error>> {
+    let Some(compaction) = settings.get("compaction") else {
+        return Ok(Vec::new());
+    };
+    if compaction == &Value::Bool(false) {
+        return Ok(vec!["--no-compaction".to_string()]);
+    }
+    let field = |name: &str| {
+        compaction
+            .get(name)
+            .and_then(Value::as_u64)
+            .filter(|n| *n > 0)
+            .ok_or_else(|| {
+                format!("settings.compaction.{name} must be a positive integer, got {compaction}")
+            })
+    };
+    let (at, keep) = (field("at_tokens")?, field("keep_recent_tokens")?);
+    if keep >= at {
+        return Err(format!(
+            "settings.compaction.keep_recent_tokens ({keep}) must be below at_tokens ({at})"
+        )
+        .into());
+    }
+    Ok(vec![
+        "--compact-at".to_string(),
+        at.to_string(),
+        "--keep-recent".to_string(),
+        keep.to_string(),
+    ])
 }
 
 fn tool_args(settings: &Value) -> Result<Vec<String>, Box<dyn Error>> {
@@ -203,8 +238,14 @@ pub fn run(job: &RunJob) -> Result<Record, Box<dyn Error>> {
 
     let hel = job.hel.ok_or("no hel binary resolved")?;
     let mut command = Command::new(&hel.path);
+    if job.turns.is_empty() {
+        command.args(["--instruction", job.instruction]);
+    } else {
+        let turns_path = job.run_dir.join("raw/turns.json");
+        fs::write(&turns_path, serde_json::to_string_pretty(job.turns)? + "\n")?;
+        command.arg("--turns-file").arg(&turns_path);
+    }
     command
-        .args(["--instruction", job.instruction])
         .args(hel_args(&job.condition.settings)?)
         .arg("--context")
         .arg(&context_path)
@@ -349,5 +390,26 @@ mod tests {
         assert!(error.to_string().contains("broken engine"));
         assert!(!dir.join("raw/search-engine.json").exists());
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn compaction_setting_becomes_two_flags() {
+        assert!(compaction_args(&json!({})).unwrap().is_empty());
+        let args = compaction_args(
+            &json!({"compaction": {"at_tokens": 5000, "keep_recent_tokens": 1500}}),
+        )
+        .unwrap();
+        assert_eq!(args, ["--compact-at", "5000", "--keep-recent", "1500"]);
+        assert_eq!(
+            compaction_args(&json!({"compaction": false})).unwrap(),
+            ["--no-compaction"]
+        );
+        for bad in [
+            json!({"compaction": {"at_tokens": 5000}}),
+            json!({"compaction": {"at_tokens": 0, "keep_recent_tokens": 1}}),
+            json!({"compaction": {"at_tokens": 1000, "keep_recent_tokens": 1000}}),
+        ] {
+            assert!(compaction_args(&bad).is_err(), "{bad}");
+        }
     }
 }

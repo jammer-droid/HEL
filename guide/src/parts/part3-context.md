@@ -1,7 +1,7 @@
 # Part III 개요
 
 > [!NOTE]
-> - 시작 상태: [`h05`](https://github.com/jammer-droid/HEL/tree/h05) · 완료 상태: `h07` *(예정)*
+> - 시작 상태: [`h05`](https://github.com/jammer-droid/HEL/tree/h05) · 완료 상태: [`h07`](https://github.com/jammer-droid/HEL/tree/h07)
 > - 논문: [§9 Memory and Context Management](https://arxiv.org/html/2609.00006v1#S9), [§16.5 Memory and Context](https://arxiv.org/html/2609.00006v1#S16.SS5)
 
 ## 현재 구조
@@ -53,18 +53,18 @@ Lab 환경에서의 task는 몇 번의 호출로 끝나기 때문에 context win
 - **교체 가능한 condenser**: OpenHands는 기록을 줄이는 방식을 바꿔 끼울 수 있게 만들었다(§9.4).
 - **한도 기반 compaction(압축)**: Claude Code, Codex, Gemini CLI 등 7개 시스템은 context 사용량이 정해 둔 지점에 닿으면 model에게 대화를 요약하게 하고, 최근 기록 일부를 원문으로 남긴다(§9.5).
 
-compaction을 쓰는 시스템은 지금 context를 얼마나 쓰는지 측정을 해야 한다. API가 돌려준 token 수를 쓰기도 하고, 글자 수로 추정하기도 한다. 혹은 큰 tool 출력을 자르거나 파일로 빼서 기록에 들어가는 양 자체를 줄이기도 한다.
+압축을 쓰는 시스템은 지금 context를 얼마나 쓰는지 측정을 해야 한다. API가 돌려준 token 수를 쓰기도 하고, 글자 수로 추정하기도 한다. 혹은 큰 tool 출력을 자르거나 파일로 빼서 기록에 들어가는 양 자체를 줄이기도 한다.
 
-논문은 window보다 일정량 아래에서 compaction을 시작하고, 최근 기록은 원문으로 남기고, 요약은 이전 요약에 이어 붙이라고 권한다(Recommendation 7).
+논문은 window보다 일정량 아래에서 압축을 시작하고, 최근 기록은 원문으로 남기고, 요약은 이전 요약에 이어 붙이라고 권한다(Recommendation 7).
 
 ## 이 Part에서 다룰 것
 
-Codex와 DeepSeek Harness가 context를 어떻게 재고 나누는지, 한도에 가까워지면 무엇을 남기고 버리는지 살펴보고, 그중 한 방식을 `hel`에 직접 만들어 본다. H5에서는 두 harness의 방식을 조사하고 `hel`이 호출마다 context 크기를 기록하게 만든다. H6에서는 조사한 방식을 구현하고, window 한도보다 이른 시점에 compaction을 일으켜 그 뒤에도 작업을 이어 갈 수 있는지 확인한다.
+Codex와 DeepSeek Harness가 context를 어떻게 재고 나누는지, 한도에 가까워지면 무엇을 남기고 버리는지 살펴보고, 그중 한 방식을 `hel`에 직접 만들어 본다. H5에서는 두 harness의 방식을 조사하고 `hel`이 호출마다 context 크기를 기록하게 만든다. H6에서는 조사한 방식을 구현하고, window 한도보다 이른 시점에 압축을 일으켜 그 뒤에도 작업을 이어 갈 수 있는지 확인한다.
 
 | Lab | 질문 | 더하는 구조 |
 | --- | --- | --- |
-| H5 Context Budget | Codex와 DeepSeek Harness는 context budget을 어떻게 측정·배분하고, 한도에 가까워지면 무엇을 남기고 버리는가? 각 방식의 장단점은 무엇인가? | context 측정(호출별 크기, cache 적용 token) |
-| H6 Compaction | *(예정)* | 조사한 방식의 budget·compaction *(예정)* |
+| [H5 Context Budget](../labs/h05-context-budget/README.md) | Codex와 DeepSeek Harness는 context budget을 어떻게 측정·배분하고, 한도에 가까워지면 무엇을 남기고 버리는가? 각 방식의 장단점은 무엇인가? | context 측정(호출별 크기, cache 적용 token) |
+| [H6 Compaction](../labs/h06-compaction/README.md) | 기존 작업과 같은 환경에서 compaction을 일찍 일으킨 뒤 이어서 작업하면, 작업은 계속되고 호출마다 cache hit는 다시 올라가는가? | 요청 전 크기 추정, 큰 tool 결과 파일 저장, 압축(이전 tool 결과 줄이기 · model 요약 · 최근 원문 유지) |
 
 ## 이 Part를 마치면
 
@@ -77,23 +77,26 @@ flowchart TB
         L[agent loop]
         T[tool · 검색 tool]
         B[context 측정<br/>호출별 크기 · cache]:::new
-        K[budget · compaction<br/>H6 예정]:::planned
+        K[context 관리<br/>요청 전 크기 추정 · 압축]:::new
+        S[큰 tool 결과 저장]:::new
         R[실행 기록]
     end
     P --> L
     C --> L
     L <--> M[model]
     L <--> T
+    T --> S
+    S --> L
     L --> B
     B --> R
-    B --> K
-    K --> L
+    K <--> L
+    K <--> M
     T <--> W[(작업 디렉터리)]
     W --> C
     classDef new fill:#fff3bf,stroke:#e8590c,color:#000
-    classDef planned stroke-dasharray: 5 5
 ```
 
 - harness는 호출마다 보낸 context의 크기와 그중 cache가 적용된 token을 기록한다.
-- compaction을 언제 시작하고 무엇을 남길지는 H6에서 정한다 *(예정)*.
-- 요약으로 잃는 정보와 그 뒤의 작업 결과는 H6에서 확인한다 *(예정)*.
+- 요청을 보내기 전마다 context 크기를 추정하고, 기준(기본 약 800K token)을 넘으면 압축한다. 이전 tool 결과의 가운데를 잘라 보고, 그래도 넘으면 system 다음의 오래된 구간을 model에게 따로 보내 요약을 받아 바꾼다. 최근 구간은 원문으로 둔다.
+- 12,500 token을 넘는 tool 결과는 작업 디렉터리 밖의 임시 파일에 저장하고, model에게는 앞·뒤와 경로만 보낸다.
+- 압축으로 바뀐 지점부터는 cache hit에 실패하고, 요약 요청만큼 model 호출이 늘어난다. 작업 디렉터리 밖의 파일을 model에게 읽게 하는 범위는 H7 Permissions와 H8 Sandbox에서 다시 정한다.
