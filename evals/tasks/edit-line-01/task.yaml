@@ -1,0 +1,12 @@
+id: edit-line-01
+eval_version: eval-v2
+description: 237줄 설정 파일에서 한 번만 나오는 값 하나를 바꾼다 (H2). 같은 값 30은 다른 줄에도 있다
+instruction: >
+  In settings.py, change REQUEST_TIMEOUT_SECONDS from 30 to 60.
+  Do not change anything else in the file.
+fixture: fixture/
+checks:
+  - id: file-exact
+    type: file_exact_match
+    path: settings.py
+    expected_file: expected/settings.py

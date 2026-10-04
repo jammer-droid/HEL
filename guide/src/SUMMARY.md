@@ -18,7 +18,8 @@
     - [FAQ](labs/h0.5-interactive-cli/faq.md)
 - [H1 Tool Loop](labs/h01-tool-loop/README.md)
     - [FAQ](labs/h01-tool-loop/faq.md)
-- [H2 Editing]()
+- [H2 Editing](labs/h02-editing/README.md)
+    - [FAQ](labs/h02-editing/faq.md)
 
 # Part II — Repository Intelligence
 

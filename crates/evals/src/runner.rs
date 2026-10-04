@@ -206,6 +206,10 @@ pub fn execute(
         "claude-code" => claude_code::run(&job)?,
         other => return Err(format!("unknown harness: {other}").into()),
     };
+    // Keep the working directory as the run left it, for checks on files (file_exact_match).
+    let workspace = spec.run_dir.join("workspace");
+    fs::create_dir_all(&workspace)?;
+    copy_dir(&job.workdir, &workspace)?;
     fs::write(
         spec.run_dir.join("record.json"),
         serde_json::to_string_pretty(&record)? + "\n",
@@ -367,7 +371,11 @@ fn copy_dir(from: &Path, to: &Path) -> Result<(), Box<dyn Error>> {
     for entry in fs::read_dir(from).map_err(|e| format!("{}: {e}", from.display()))? {
         let entry = entry?;
         let target = to.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
+        let file_type = entry.file_type()?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        if file_type.is_dir() {
             fs::create_dir_all(&target)?;
             copy_dir(&entry.path(), &target)?;
         } else {

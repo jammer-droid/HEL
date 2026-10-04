@@ -24,3 +24,7 @@ Thumbs.db
 
 # evals results: kept locally, not tracked
 /results/
+
+# Local style review snapshots, user messages and Codex outputs
+/tools/.style-review/
+/tools/__pycache__/

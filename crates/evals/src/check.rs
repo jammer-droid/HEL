@@ -109,7 +109,7 @@ fn judge_raw(
     let record: Option<Record> = serde_json::from_value(raw).ok();
 
     let verdict = match (&record, schema_errors.is_empty()) {
-        (Some(record), true) if record.validity.valid => judge(record, task, &sidecar),
+        (Some(record), true) if record.validity.valid => judge(record, task, &sidecar, run_dir),
         (Some(record), true) => invalid(&sidecar.run_id, record.validity.reasons.join("; ")),
         _ => invalid(
             &sidecar.run_id,
@@ -143,7 +143,7 @@ fn invalid(run_id: &str, detail: String) -> Verdict {
     }
 }
 
-fn judge(record: &Record, task: &Task, sidecar: &RunSidecar) -> Verdict {
+fn judge(record: &Record, task: &Task, sidecar: &RunSidecar, run_dir: &Path) -> Verdict {
     let checks: Vec<CheckResult> = task
         .checks
         .iter()
@@ -159,6 +159,13 @@ fn judge(record: &Record, task: &Task, sidecar: &RunSidecar) -> Verdict {
                 CheckKind::OutputExactMatch { expected_file } => {
                     output_exact_match(record, &task.dir.join(expected_file))
                 }
+                CheckKind::FileExactMatch {
+                    path,
+                    expected_file,
+                } => file_exact_match(
+                    &run_dir.join("workspace").join(path),
+                    &task.dir.join(expected_file),
+                ),
                 CheckKind::ToolCalls {
                     category,
                     count,
@@ -200,7 +207,32 @@ fn output_exact_match(record: &Record, expected_file: &Path) -> (bool, String) {
     let Some(actual) = &record.outcome.final_output else {
         return (false, "no final output".to_string());
     };
-    let (a, e) = (strip_one_newline(actual), strip_one_newline(&expected));
+    same_text(actual, &expected)
+}
+
+/// The file the run left in the working directory equals the expected file, with the same
+/// newline rule as `output_exact_match`.
+fn file_exact_match(actual_file: &Path, expected_file: &Path) -> (bool, String) {
+    let expected = match fs::read_to_string(expected_file) {
+        Ok(text) => text,
+        Err(e) => {
+            return (
+                false,
+                format!("cannot read {}: {e}", expected_file.display()),
+            );
+        }
+    };
+    let actual = match fs::read_to_string(actual_file) {
+        Ok(text) => text,
+        Err(e) => return (false, format!("cannot read {}: {e}", actual_file.display())),
+    };
+    same_text(&actual, &expected)
+}
+
+/// Compares ignoring at most one trailing newline on each side; on mismatch, the first
+/// differing line.
+fn same_text(actual: &str, expected: &str) -> (bool, String) {
+    let (a, e) = (strip_one_newline(actual), strip_one_newline(expected));
     if a == e {
         return (true, String::new());
     }
@@ -295,4 +327,48 @@ fn tool_calls(
 
 fn canonical(path: &Path) -> PathBuf {
     fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp(name: &str, files: &[(&str, &str)]) -> PathBuf {
+        let dir = std::env::temp_dir().join("evals-check-test").join(name);
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        for (file, text) in files {
+            fs::write(dir.join(file), text).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn file_exact_match_ignores_one_trailing_newline() {
+        let dir = temp(
+            "newline",
+            &[("a.txt", "x = 1\ny = 2\n"), ("b.txt", "x = 1\ny = 2")],
+        );
+        assert!(file_exact_match(&dir.join("a.txt"), &dir.join("b.txt")).0);
+    }
+
+    #[test]
+    fn file_exact_match_reports_first_differing_line() {
+        let dir = temp(
+            "differ",
+            &[("a.txt", "x = 1\ny =  2\n"), ("b.txt", "x = 1\ny = 2\n")],
+        );
+        let (pass, detail) = file_exact_match(&dir.join("a.txt"), &dir.join("b.txt"));
+        assert!(!pass);
+        assert!(detail.contains("line 2 differs"), "{detail}");
+        assert!(detail.contains("y·=··2"), "{detail}");
+    }
+
+    #[test]
+    fn file_exact_match_fails_when_file_is_missing() {
+        let dir = temp("missing", &[("b.txt", "x\n")]);
+        let (pass, detail) = file_exact_match(&dir.join("a.txt"), &dir.join("b.txt"));
+        assert!(!pass);
+        assert!(detail.starts_with("cannot read"), "{detail}");
+    }
 }

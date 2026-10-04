@@ -1,8 +1,8 @@
 //! Tools hel offers to the model. H0: `read_file`. H1: `bash`, and the set of tools given to the
-//! model is chosen per run (`--tools`).
+//! model is chosen per run (`--tools`). H2: `write_file`, `search_replace`.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use record::ToolCategory;
@@ -10,6 +10,10 @@ use serde_json::{Value, json};
 
 pub const READ_FILE: &str = "read_file";
 pub const BASH: &str = "bash";
+pub const WRITE_FILE: &str = "write_file";
+pub const SEARCH_REPLACE: &str = "search_replace";
+
+const KNOWN: &[&str] = &[BASH, READ_FILE, WRITE_FILE, SEARCH_REPLACE];
 
 /// Tools given when `--tools` is not passed. H1 follows the paper's advice to start from bash.
 pub const DEFAULT: &[&str] = &[BASH];
@@ -29,7 +33,10 @@ impl Toolset {
         for name in names {
             let name = name.as_ref().trim();
             if definition(name).is_none() {
-                return Err(format!("unknown tool: {name} (known: {BASH}, {READ_FILE})"));
+                return Err(format!(
+                    "unknown tool: {name} (known: {})",
+                    KNOWN.join(", ")
+                ));
             }
             if !kept.iter().any(|k| k == name) {
                 kept.push(name.to_string());
@@ -59,6 +66,8 @@ impl Toolset {
         match name {
             READ_FILE => read_file(workdir, args),
             BASH => bash(workdir, args),
+            WRITE_FILE => write_file(workdir, args),
+            SEARCH_REPLACE => search_replace(workdir, args),
             other => Err(format!("unknown tool: {other}")),
         }
     }
@@ -70,26 +79,57 @@ pub fn category(name: &str) -> ToolCategory {
     match name {
         READ_FILE => ToolCategory::Read,
         BASH => ToolCategory::Exec,
+        WRITE_FILE | SEARCH_REPLACE => ToolCategory::Edit,
         _ => ToolCategory::Other,
     }
 }
 
 fn definition(name: &str) -> Option<Value> {
-    let (description, param, param_description) = match name {
+    const PATH: (&str, &str) = (
+        "path",
+        "Path of the file, relative to the working directory.",
+    );
+    let (description, params): (&str, &[(&str, &str)]) = match name {
         READ_FILE => (
             "Read a UTF-8 text file in the working directory and return its full contents.",
-            "path",
-            "Path of the file, relative to the working directory.",
+            &[PATH],
         ),
         BASH => (
             "Run a bash command in the working directory. Returns `exit=<code>` on the first \
              line, then stdout, then stderr. Each call runs in a new shell, so `cd` and \
              environment variables do not carry over.",
-            "command",
-            "The bash command to run.",
+            &[("command", "The bash command to run.")],
+        ),
+        WRITE_FILE => (
+            "Write a UTF-8 text file in the working directory, creating it or replacing its \
+             whole contents. The parent directory must exist.",
+            &[PATH, ("content", "The complete new contents of the file.")],
+        ),
+        SEARCH_REPLACE => (
+            "Replace text in a file in the working directory. `search` must appear in the \
+             file exactly once, character for character; otherwise nothing is changed and \
+             the number of occurrences is returned as an error.",
+            &[
+                PATH,
+                (
+                    "search",
+                    "The exact text to replace. Must occur exactly once in the file.",
+                ),
+                ("replace", "The text to put in its place."),
+            ],
         ),
         _ => return None,
     };
+    let properties: serde_json::Map<String, Value> = params
+        .iter()
+        .map(|(param, about)| {
+            (
+                param.to_string(),
+                json!({ "type": "string", "description": about }),
+            )
+        })
+        .collect();
+    let required: Vec<&str> = params.iter().map(|(param, _)| *param).collect();
     Some(json!({
         "type": "function",
         "function": {
@@ -97,10 +137,8 @@ fn definition(name: &str) -> Option<Value> {
             "description": description,
             "parameters": {
                 "type": "object",
-                "properties": {
-                    param: { "type": "string", "description": param_description }
-                },
-                "required": [param]
+                "properties": properties,
+                "required": required
             }
         }
     }))
@@ -119,6 +157,60 @@ fn read_file(workdir: &Path, args: &Value) -> Result<String, String> {
         return Err(format!("{path}: outside the working directory"));
     }
     fs::read_to_string(&target).map_err(|e| format!("{path}: {e}"))
+}
+
+/// Reads a string argument, or explains which one is missing.
+fn string_arg<'a>(args: &'a Value, name: &str) -> Result<&'a str, String> {
+    args.get(name)
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("missing string argument: {name}"))
+}
+
+/// Resolves `path` to a file inside `workdir` that may not exist yet: the parent directory
+/// must exist, and the result (following a symlink if the file exists) must stay inside.
+fn writable_target(workdir: &Path, path: &str) -> Result<PathBuf, String> {
+    let root = fs::canonicalize(workdir).map_err(|e| format!("working directory: {e}"))?;
+    let joined = root.join(path);
+    let (Some(parent), Some(name)) = (joined.parent(), joined.file_name()) else {
+        return Err(format!("{path}: not a file path"));
+    };
+    let parent = fs::canonicalize(parent).map_err(|e| format!("{path}: {e}"))?;
+    let target = parent.join(name);
+    let resolved = fs::canonicalize(&target).unwrap_or_else(|_| target.clone());
+    if !resolved.starts_with(&root) {
+        return Err(format!("{path}: outside the working directory"));
+    }
+    Ok(target)
+}
+
+/// Writes `content` to a file inside `workdir`, creating or overwriting it.
+fn write_file(workdir: &Path, args: &Value) -> Result<String, String> {
+    let path = string_arg(args, "path")?;
+    let content = string_arg(args, "content")?;
+    let target = writable_target(workdir, path)?;
+    fs::write(&target, content).map_err(|e| format!("{path}: {e}"))?;
+    Ok(format!("wrote {} bytes to {path}", content.len()))
+}
+
+/// Replaces `search` with `replace` in a file inside `workdir` only when `search` occurs
+/// exactly once (paper §16.10, Listing 3). Otherwise the file is left as it was.
+fn search_replace(workdir: &Path, args: &Value) -> Result<String, String> {
+    let path = string_arg(args, "path")?;
+    let search = string_arg(args, "search")?;
+    let replace = string_arg(args, "replace")?;
+    if search.is_empty() {
+        return Err("search must not be empty".to_string());
+    }
+    let target = writable_target(workdir, path)?;
+    let text = fs::read_to_string(&target).map_err(|e| format!("{path}: {e}"))?;
+    let count = text.matches(search).count();
+    if count != 1 {
+        return Err(format!(
+            "search string occurs {count}x in {path}; must be unique"
+        ));
+    }
+    fs::write(&target, text.replacen(search, replace, 1)).map_err(|e| format!("{path}: {e}"))?;
+    Ok(format!("replaced 1 occurrence in {path}"))
 }
 
 /// Runs a shell command with `bash -c` in `workdir` and returns `exit=<code>` followed by
@@ -169,6 +261,10 @@ mod tests {
 
     fn with_bash() -> Toolset {
         Toolset::new(&[BASH]).unwrap()
+    }
+
+    fn editing() -> Toolset {
+        Toolset::new(&[WRITE_FILE, SEARCH_REPLACE]).unwrap()
     }
 
     #[test]
@@ -241,5 +337,143 @@ mod tests {
             .map(|d| d["function"]["name"].as_str().unwrap())
             .collect();
         assert_eq!(names, ["bash", "read_file"]);
+    }
+
+    #[test]
+    fn write_file_creates_and_overwrites_inside_workdir() {
+        let dir = workdir("write");
+        let tools = editing();
+        let out = tools.execute(
+            &dir,
+            WRITE_FILE,
+            &json!({ "path": "new.txt", "content": "a\n" }),
+        );
+        assert_eq!(out, Ok("wrote 2 bytes to new.txt".to_string()));
+        tools
+            .execute(
+                &dir,
+                WRITE_FILE,
+                &json!({ "path": "hello.txt", "content": "bye" }),
+            )
+            .unwrap();
+        assert_eq!(fs::read_to_string(dir.join("new.txt")).unwrap(), "a\n");
+        assert_eq!(fs::read_to_string(dir.join("hello.txt")).unwrap(), "bye");
+    }
+
+    #[test]
+    fn write_file_refuses_outside_workdir_and_missing_parent() {
+        let dir = workdir("write-outside");
+        let tools = editing();
+        let outside = tools.execute(
+            &dir,
+            WRITE_FILE,
+            &json!({ "path": "../escaped.txt", "content": "x" }),
+        );
+        assert!(
+            outside
+                .unwrap_err()
+                .contains("outside the working directory")
+        );
+        assert!(!dir.parent().unwrap().join("escaped.txt").exists());
+        let absolute = tools.execute(
+            &dir,
+            WRITE_FILE,
+            &json!({ "path": "/tmp/hel-escaped.txt", "content": "x" }),
+        );
+        assert!(
+            absolute
+                .unwrap_err()
+                .contains("outside the working directory")
+        );
+        let no_parent = tools.execute(
+            &dir,
+            WRITE_FILE,
+            &json!({ "path": "no/such/dir.txt", "content": "x" }),
+        );
+        assert!(no_parent.is_err());
+    }
+
+    #[test]
+    fn write_file_refuses_symlink_pointing_outside() {
+        let dir = workdir("write-symlink");
+        let outside = dir.parent().unwrap().join("write-symlink-target.txt");
+        fs::write(&outside, "keep").unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join("link.txt")).unwrap();
+        let out = editing().execute(
+            &dir,
+            WRITE_FILE,
+            &json!({ "path": "link.txt", "content": "x" }),
+        );
+        assert!(out.unwrap_err().contains("outside the working directory"));
+        assert_eq!(fs::read_to_string(&outside).unwrap(), "keep");
+    }
+
+    #[test]
+    fn search_replace_changes_a_unique_match_only() {
+        let dir = workdir("replace");
+        fs::write(
+            dir.join("a.ini"),
+            "[a]\nretries = 3\n[b]\nretries = 3\ntimeout = 10\n",
+        )
+        .unwrap();
+        let tools = editing();
+        let many = tools.execute(
+            &dir,
+            SEARCH_REPLACE,
+            &json!({ "path": "a.ini", "search": "retries = 3", "replace": "retries = 5" }),
+        );
+        assert_eq!(
+            many,
+            Err("search string occurs 2x in a.ini; must be unique".to_string())
+        );
+        let none = tools.execute(
+            &dir,
+            SEARCH_REPLACE,
+            &json!({ "path": "a.ini", "search": "retries = 9", "replace": "x" }),
+        );
+        assert_eq!(
+            none,
+            Err("search string occurs 0x in a.ini; must be unique".to_string())
+        );
+        let one = tools.execute(&dir, SEARCH_REPLACE, &json!({ "path": "a.ini", "search": "[b]\nretries = 3", "replace": "[b]\nretries = 5" }));
+        assert_eq!(one, Ok("replaced 1 occurrence in a.ini".to_string()));
+        assert_eq!(
+            fs::read_to_string(dir.join("a.ini")).unwrap(),
+            "[a]\nretries = 3\n[b]\nretries = 5\ntimeout = 10\n"
+        );
+    }
+
+    #[test]
+    fn search_replace_refuses_empty_search_and_outside_paths() {
+        let dir = workdir("replace-refuse");
+        let tools = editing();
+        let empty = tools.execute(
+            &dir,
+            SEARCH_REPLACE,
+            &json!({ "path": "hello.txt", "search": "", "replace": "x" }),
+        );
+        assert!(empty.is_err());
+        let outside = tools.execute(
+            &dir,
+            SEARCH_REPLACE,
+            &json!({ "path": "../outside-sibling/secret.txt", "search": "s", "replace": "x" }),
+        );
+        assert!(outside.is_err());
+        assert_eq!(
+            fs::read_to_string(dir.join("hello.txt")).unwrap(),
+            "Hello, harness!\n"
+        );
+    }
+
+    #[test]
+    fn edit_tools_are_recorded_as_edit_and_define_all_arguments() {
+        assert_eq!(category(WRITE_FILE), ToolCategory::Edit);
+        assert_eq!(category(SEARCH_REPLACE), ToolCategory::Edit);
+        let tools = editing();
+        let defs = tools.definitions().as_array().unwrap();
+        assert_eq!(
+            defs[1]["function"]["parameters"]["required"],
+            json!(["path", "search", "replace"])
+        );
     }
 }

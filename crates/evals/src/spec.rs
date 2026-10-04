@@ -87,6 +87,11 @@ pub enum CheckKind {
     OutputExactMatch {
         expected_file: PathBuf,
     },
+    FileExactMatch {
+        /// File in the working directory after the run (relative to it).
+        path: PathBuf,
+        expected_file: PathBuf,
+    },
     ToolCalls {
         category: ToolCategory,
         count: usize,

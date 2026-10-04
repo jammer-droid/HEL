@@ -2,7 +2,8 @@
 //!
 //! A model ↔ tool loop. The model is called repeatedly; each tool call it makes is executed and
 //! its result sent back, until the model answers without a tool call or the turn budget runs out.
-//! Tools: `bash` and `read_file` (H1); `--tools` chooses which ones the model gets (default: bash).
+//! Tools: `bash`, `read_file` (H1), `write_file`, `search_replace` (H2); `--tools` chooses which
+//! ones the model gets (default: bash).
 //!
 //! Usage:
 //!   hel [--tools <a,b>]

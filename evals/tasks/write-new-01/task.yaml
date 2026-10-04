@@ -1,0 +1,34 @@
+id: write-new-01
+eval_version: eval-v2
+description: $, 백틱, 따옴표가 섞인 20줄 shell script를 지시에 적힌 그대로 새 파일로 만든다 (H2 보조 확인, Lab 정의 밖)
+instruction: |
+  Create a new file named deploy.sh in the current directory with exactly the content
+  between the BEGIN and END lines below (not including those two lines).
+  Do not run the script. Do not change any other file.
+  ----- BEGIN -----
+  #!/usr/bin/env bash
+  # Deploy the current build to the target given as the first argument.
+  set -euo pipefail
+
+  TARGET="${1:?usage: deploy.sh <target>}"
+  VERSION="$(git describe --tags --always)"
+  STAMP=`date +%Y%m%d-%H%M%S`
+  ARCHIVE="build-${VERSION}-${STAMP}.tar.gz"
+
+  echo "Packaging ${VERSION} as ${ARCHIVE}"
+  tar -czf "$ARCHIVE" build/
+
+  if [[ "$TARGET" == 'prod' ]]; then
+    read -r -p "Deploy to prod? [y/N] " answer
+    [[ "$answer" == "y" ]] || { echo 'aborted'; exit 1; }
+  fi
+
+  scp "$ARCHIVE" "deploy@${TARGET}.internal:/srv/releases/"
+  echo "Done: \$ARCHIVE uploaded to $TARGET (100% complete)"
+  ----- END -----
+fixture: fixture/
+checks:
+  - id: file-exact
+    type: file_exact_match
+    path: deploy.sh
+    expected_file: expected/deploy.sh

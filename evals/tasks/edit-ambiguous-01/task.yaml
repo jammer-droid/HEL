@@ -1,0 +1,12 @@
+id: edit-ambiguous-01
+eval_version: eval-v2
+description: 같은 줄 retries = 3이 다섯 섹션에 있는 INI 파일에서 [database] 섹션의 값만 바꾼다 (H2)
+instruction: >
+  In services.ini, change retries from 3 to 5 in the [database] section only.
+  Do not change anything else in the file.
+fixture: fixture/
+checks:
+  - id: file-exact
+    type: file_exact_match
+    path: services.ini
+    expected_file: expected/services.ini

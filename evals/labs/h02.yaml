@@ -1,0 +1,40 @@
+# Lab 정의. evals try / run / report가 Lab ID(h02)로 이 파일을 찾는다.
+lab: h02
+title: Editing
+description: >
+  Compare a hel that edits files only through bash with a hel that also has write_file
+  (whole-file write) and a hel that has write_file and search_replace (unique exact
+  substring replacement), on changing one value in a long file and on changing one of
+  several identical lines.
+
+model:                     # H0, H1과 같게 유지한다
+  provider: deepseek
+  id: deepseek-flash
+  params: {}               # thinking은 provider 기본값(켜짐)
+
+budget:
+  max_turns: 10            # H1의 5에서 올림. 읽기, 편집, 확인, 답변에 실패 후 다시 시도할 여유
+  timeout_seconds: 120
+  max_output_tokens: 8192
+
+conditions:                # evals run이 실행하는 비교 조건
+  - name: baseline         # 이 Lab을 시작한 상태(h02)의 hel. tool은 기본값 bash 하나. 코드를 고치기 전에 측정한다
+    harness: hel
+  - name: variant-write    # 이 Lab에서 만든 hel. bash와 write_file
+    harness: hel
+    settings:
+      tools: [bash, write_file]
+  - name: variant-write-replace  # 이 Lab에서 만든 hel. bash, write_file, search_replace
+    harness: hel
+    settings:
+      tools: [bash, write_file, search_replace]
+
+tasks:
+  - edit-line-01
+  - edit-ambiguous-01
+
+repetitions: 3
+
+rubric:                    # 채점 기준 설명. 실제 판정은 각 task.yaml의 checks가 한다
+  file-exact: After the run, the edited file in the working directory equals the expected file. Only one trailing newline on each side is ignored; nothing else is normalized, so any other changed line fails.
+  tool-use: Not a pass/fail check. The report lists tool calls per run (tool name and command or path) and mean calls per tool.

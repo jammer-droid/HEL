@@ -29,5 +29,7 @@ hel --instruction <TEXT> [--tools <a,b>] [--context <run-context.json> --record 
 | --- | --- |
 | `read_file` | read |
 | `bash` | exec (H1. 명령 내용과 관계없이 exec. `cat`으로 읽어도 read로 세지 않는다) |
+| `write_file` | edit (H2) |
+| `search_replace` | edit (H2) |
 
 Lab이 진행되며 tool이 추가되면 이 표를 갱신한다.
