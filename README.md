@@ -10,7 +10,7 @@ coding agent의 harness를 Rust로 직접 만들고, 각 설계 선택이 무엇
 
 | 경로 | 내용 |
 | --- | --- |
-| `crates/hel/` | 직접 만드는 harness `hel` |
+| `crates/hel/` | 직접 만드는 harness `hel`. H0에서 만든다(`h00`에는 없다) |
 | `crates/record/` | 실행 기록(record) 타입. `hel`과 `evals`가 함께 쓴다 |
 | `crates/evals/` | 측정 도구 `evals`: task 실행, 채점, report |
 | `evals/labs/` | Lab 정의: test set, 기본 model과 budget, 채점 기준 |
@@ -22,7 +22,20 @@ coding agent의 harness를 Rust로 직접 만들고, 각 설계 선택이 무엇
 
 ## Lab 진행
 
-각 Lab의 시작 상태는 `hXX` tag로 제공한다. Lab의 시작 상태는 이전 Lab의 완료 상태다.
+각 Lab의 시작 상태는 [`hXX` tag](https://github.com/jammer-droid/HEL/tags)로 제공한다. Lab의 시작 상태는 이전 Lab의 완료 상태다.
+
+| tag | 내용 |
+| --- | --- |
+| [`h00`](https://github.com/jammer-droid/HEL/tree/h00) | 기록 형식(`record`), 측정 도구(`evals`), H0 가이드. `hel`은 없다 |
+| `h01` *(예정)* | H0 완료 상태 |
+
+```bash
+git clone https://github.com/jammer-droid/HEL.git
+```
+
+```bash
+git checkout -b my-h00 h00
+```
 
 ## 준비
 
@@ -44,13 +57,13 @@ export DEEPSEEK_API_KEY="<발급받은 key>"
 cargo install --path crates/evals --locked --target-dir target
 ```
 
-```bash
-cargo install --path crates/hel --locked --target-dir target
-```
-
 `--locked`는 저장소의 `Cargo.lock` 버전 그대로 설치하고, `--target-dir target`은 저장소의 빌드 폴더(`target/`)를 재사용해 다시 설치할 때 바뀐 crate만 컴파일한다.
 
-`hel`은 H0에서 직접 만든다. `h00`에는 `crates/hel`이 없으므로 H0를 마친 뒤 설치한다.
+`hel`은 H0에서 직접 만든다. `crates/hel`을 만든 뒤 설치한다(`h01`부터는 포함되어 있다).
+
+```bash
+cargo install --path crates/hel --target-dir target
+```
 
 `evals`는 설치된 `hel`을 사용한다. `hel`이 설치되어 있지 않으면 `crates/hel`을 빌드해서 사용한다. `hel` 코드를 고친 뒤에는 다시 설치하거나 `--build` 옵션으로 작업 중인 코드를 실행한다. 설치된 `hel`이 소스보다 오래되었으면 `evals`가 경고한다.
 

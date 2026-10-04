@@ -33,16 +33,19 @@ export DEEPSEEK_API_KEY="<발급받은 key>"
 
 ## 소스 받기
 
-> [!NOTE]
-> 이 가이드와 소스 코드는 아직 공개 저장소에 올라가지 않았다. 공개 저장소 주소와 받는 방법은 H0가 완료되는 시점에 이 페이지에 추가한다.
+소스 코드와 이 가이드의 원본은 [jammer-droid/HEL](https://github.com/jammer-droid/HEL)에 있다.
+
+```bash
+git clone https://github.com/jammer-droid/HEL.git
+```
 
 ## 소스 트리
 
-저장소의 구조는 다음과 같다. 아직 만들어지지 않은 디렉터리는 *(예정)*으로 표시했다.
+저장소의 구조는 다음과 같다.
 
 | 경로 | 내용 |
 | --- | --- |
-| `crates/hel/` | 이 가이드에서 만드는 harness. 이름은 **hel**(Harness Engineering Lab)이다 |
+| `crates/hel/` | 이 가이드에서 만드는 harness. 이름은 **hel**(Harness Engineering Lab)이다. H0에서 만든다(`h00`에는 없다) |
 | `crates/record/` | 실행 기록(record)의 데이터 타입. harness와 측정 도구가 함께 쓴다 |
 | `crates/evals/` | 측정 도구 `evals`: task 실행, 기록 수집, 판정, 집계 |
 | `evals/labs/` | Lab별 test set, 기본 model과 budget, 채점 기준 |
@@ -54,12 +57,12 @@ export DEEPSEEK_API_KEY="<발급받은 key>"
 
 ## Lab checkpoint 사용하기
 
-각 Lab의 시작 상태는 `hXX` tag로 제공한다. Lab의 시작 상태는 이전 Lab을 완성한 상태다.
+각 Lab의 시작 상태는 [`hXX` tag](https://github.com/jammer-droid/HEL/tags)로 제공한다. Lab의 시작 상태는 이전 Lab을 완성한 상태다.
 
 | tag | 내용 |
 | --- | --- |
-| `h00` | 기록 형식(`record`)과 측정 도구. harness는 없음 |
-| `h01` | H0 완성 상태 |
+| [`h00`](https://github.com/jammer-droid/HEL/tree/h00) | 기록 형식(`record`)과 측정 도구. harness는 없음 |
+| `h01` *(예정)* | H0 완성 상태 |
 | `hXX` | H(XX-1) 완성 상태 |
 
 Lab을 시작할 때는 해당 tag에서 branch를 만든다.
@@ -74,7 +77,7 @@ git checkout -b my-h04 h04
 git diff h04..h05
 ```
 
-tag는 각 Lab이 끝날 때 만든다. 아직 만들어진 tag는 없다.
+tag는 각 Lab이 끝날 때 만든다.
 
 ## 명령 설치
 

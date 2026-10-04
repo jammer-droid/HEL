@@ -1,7 +1,7 @@
 # H0 — Hello Harness!
 
 > [!NOTE]
-> - 시작 상태: `h00` tag · 완료 상태: `h01` tag *(예정)*
+> - 시작 상태: [`h00`](https://github.com/jammer-droid/HEL/tree/h00) · 완료 상태: `h01` *(예정)*
 > - 논문: [§6 Agent Loop Design](https://arxiv.org/html/2609.00006v1#S6), [§7 LLM Integration and Model–Agent Co-design](https://arxiv.org/html/2609.00006v1#S7)
 
 ```bash
