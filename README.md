@@ -33,7 +33,8 @@ harness 구현은 바이브 코딩으로 진행한다. 코드를 작성하는 �
 | [`h02`](https://github.com/jammer-droid/HEL/tree/h02) | H1 완료 상태. `hel`에 bash tool, `--tools`로 tool 구성 선택(기본 bash) |
 | [`h03`](https://github.com/jammer-droid/HEL/tree/h03) | H2 완료 상태. `hel`에 `write_file`, `search_replace` tool(`--tools`로 선택) |
 | [`h04`](https://github.com/jammer-droid/HEL/tree/h04) | H3 완료 상태. `hel`이 실행 환경 정보와 작업 디렉터리의 `HEL.md`를 system message로 보냄(`--no-env`, `--no-context-file`로 끔) |
-| `h05` *(예정)* | H4 완료 상태 |
+| [`h05`](https://github.com/jammer-droid/HEL/tree/h05) | H4 완료 상태 |
+| `h06` *(예정)* | H5 완료 상태 |
 
 ```bash
 git clone https://github.com/jammer-droid/HEL.git
@@ -51,6 +52,7 @@ git checkout -b my-h01 h01
 | --- | --- |
 | Rust (`rustup`, `cargo`) | 빌드. 설치는 [rustup.rs](https://rustup.rs/) |
 | DeepSeek API key | 실험 model(`deepseek-flash`) 호출 |
+| ripgrep (`rg`, H4부터) | 전용 검색 tool과 검색 측정. PATH에서 `rg --version`으로 확인 |
 | Claude Code (선택) | 외부 harness 비교. 없으면 해당 조건은 건너뛴다 |
 
 API key는 환경 변수로 넣는다. 코드나 파일에 적어 commit하지 않는다.
@@ -91,6 +93,7 @@ hel --instruction "Read the file hello.txt and print its contents exactly as the
 
 - 실행한 폴더를 작업 디렉터리로 쓴다. `read_file`, `write_file`, `search_replace` tool은 이 폴더 안의 파일만 다룬다.
 - `--tools`를 생략하면 `bash` tool 하나만 준다. model이 쓴 명령을 이 폴더에서 그대로 실행한다.
+- H4 검색 tool은 `--tools bash,glob,grep`로 제공한다. PATH에 ripgrep(`rg`)이 필요하다. `glob`은 파일명, `grep`은 본문을 검색하고 결과가 100건·10KB를 넘으면 잘림을 표시한다.
 - 실행 환경 정보(OS, shell, 작업 디렉터리)와 이 폴더의 `HEL.md`를 system message로 함께 보낸다. `HEL.md`가 없으면 환경 정보만 보낸다. 상위 폴더의 `HEL.md`는 읽지 않는다.
 - 출력과 오류 메시지는 영어다.
 
@@ -100,7 +103,7 @@ hel --instruction "Read the file hello.txt and print its contents exactly as the
 | 옵션 | 필수 | 설명 |
 | --- | --- | --- |
 | `--instruction "<text>"` | 아니요 | model에게 보낼 지시. 없으면 대화형으로 실행한다 |
-| `--tools <a,b>` | 아니요 | model에게 줄 tool(`bash`, `read_file`, `write_file`, `search_replace`)을 쉼표로 나열한다. 없으면 `bash` |
+| `--tools <a,b>` | 아니요 | model에게 줄 tool(`bash`, `read_file`, `write_file`, `search_replace`, `glob`, `grep`)을 쉼표로 나열한다. 없으면 `bash` |
 | `--no-env` | 아니요 | 실행 환경 정보를 보내지 않는다 |
 | `--context-file <name>` | 아니요 | `HEL.md` 대신 작업 디렉터리의 `<name>` 파일을 보낸다 |
 | `--no-context-file` | 아니요 | context 파일을 보내지 않는다 |
@@ -113,7 +116,7 @@ hel --instruction "Read the file hello.txt and print its contents exactly as the
 
 1. task의 `fixture/`를 임시 폴더에 복사해 작업 디렉터리로 쓴다.
 2. Lab 정의의 model과 budget으로 `results/.../<run-id>/context.json`을 만든다.
-3. `hel --instruction <task 지시문> --context <context.json> --record <record.json>`을 실행한다. Lab 정의의 조건에 `settings.tools`가 있으면 `--tools`로, `settings.env`는 `--env`/`--no-env`로, `settings.context_file`은 `--context-file <name>`/`--no-context-file`로 넘긴다. 환경 변수는 `PATH`(`/usr/bin:/bin:/usr/sbin:/sbin`)와 `DEEPSEEK_API_KEY`만 넘긴다.
+3. `hel --instruction <task 지시문> --context <context.json> --record <record.json>`을 실행한다. Lab 정의의 조건에 `settings.tools`가 있으면 `--tools`로, `settings.env`는 `--env`/`--no-env`로, `settings.context_file`은 `--context-file <name>`/`--no-context-file`로 넘긴다. 환경 변수는 고정 `PATH`와 `DEEPSEEK_API_KEY`만 넘긴다. 기본 PATH는 `/usr/bin:/bin:/usr/sbin:/sbin`이며, `settings.ripgrep: true`이면 run별 `bin/rg`를 준비해 그 폴더를 앞에 추가한다.
 4. budget의 timeout이 지나면 `hel`을 종료한다.
 5. `hel`이 쓴 `record.json`을 읽어 채점한다.
 

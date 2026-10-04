@@ -1,0 +1,14 @@
+{
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/metrics/export",
+      "handler_file": "src/handlers/metrics/export_job.json"
+    },
+    {
+      "method": "GET",
+      "path": "/metrics/status",
+      "handler_file": "src/handlers/metrics/status_job.json"
+    }
+  ]
+}

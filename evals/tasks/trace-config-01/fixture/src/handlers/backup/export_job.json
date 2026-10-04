@@ -1,0 +1,5 @@
+{
+  "job": "backup_export",
+  "config_file": "config/profiles/backup-batch.json",
+  "timeout_seconds": 120
+}

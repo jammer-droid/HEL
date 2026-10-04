@@ -1,0 +1,5 @@
+{
+  "job": "users_export",
+  "config_file": "config/profiles/users-batch.json",
+  "timeout_seconds": 120
+}

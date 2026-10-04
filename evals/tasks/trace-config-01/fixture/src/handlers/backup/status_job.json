@@ -1,0 +1,4 @@
+{
+  "job": "backup_status",
+  "config_file": "config/profiles/backup-status.json"
+}

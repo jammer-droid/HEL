@@ -1,0 +1,4 @@
+{
+  "storage_bucket": "atlas-reports-status",
+  "poll_seconds": 30
+}

@@ -1,0 +1,4 @@
+{
+  "storage_bucket": "atlas-billing-status",
+  "poll_seconds": 30
+}

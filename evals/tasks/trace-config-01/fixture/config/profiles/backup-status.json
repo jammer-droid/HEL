@@ -1,0 +1,4 @@
+{
+  "storage_bucket": "atlas-backup-status",
+  "poll_seconds": 30
+}

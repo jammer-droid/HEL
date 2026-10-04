@@ -1,0 +1,15 @@
+{
+  "scenario": "webhook_fault_08",
+  "description": "Explicit test override; not the implementation default.",
+  "RETRY_LIMIT": 28,
+  "cases": [
+    {
+      "RETRY_LIMIT": 38,
+      "result": "timeout"
+    },
+    {
+      "RETRY_LIMIT": 48,
+      "result": "rejected"
+    }
+  ]
+}

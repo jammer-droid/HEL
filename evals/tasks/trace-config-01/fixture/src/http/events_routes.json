@@ -1,0 +1,14 @@
+{
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/events/export",
+      "handler_file": "src/handlers/events/export_job.json"
+    },
+    {
+      "method": "GET",
+      "path": "/events/status",
+      "handler_file": "src/handlers/events/status_job.json"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "storage_bucket": "atlas-events-exports",
+  "batch_size": 600,
+  "format": "jsonl"
+}

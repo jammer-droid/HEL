@@ -1,0 +1,5 @@
+{
+  "job": "audit_export",
+  "config_file": "config/profiles/audit-batch.json",
+  "timeout_seconds": 120
+}

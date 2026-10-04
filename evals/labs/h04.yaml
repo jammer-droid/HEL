@@ -1,0 +1,47 @@
+# H4 측정 정의. baseline은 검색 tool 구현 전에 실행한다.
+lab: h04
+title: Repository Search
+revision: 1
+description: >
+  Compare bash-based repository search with bash plus dedicated glob and grep tools,
+  on finding a named file, finding a current source value among historical examples,
+  and following a route through a handler to its configuration. Both conditions keep
+  the H3 environment/context behavior and must have the same ripgrep available.
+
+model:
+  provider: deepseek
+  id: deepseek-flash
+  params: {}
+
+budget:
+  max_turns: 10
+  timeout_seconds: 120
+  max_output_tokens: 8192
+
+conditions:
+  - name: baseline
+    harness: hel
+    settings:
+      tools: [bash]
+      ripgrep: true
+      env: true
+      context_file: HEL.md
+  - name: variant-search
+    harness: hel
+    settings:
+      tools: [bash, glob, grep]
+      ripgrep: true
+      env: true
+      context_file: HEL.md
+
+tasks:
+  - find-echo-01
+  - search-config-01
+  - trace-config-01
+
+repetitions: 3
+
+rubric:
+  output-exact: The final output equals the expected short ASCII answer; only one trailing newline on either side is ignored. Tool choice and call count are not pass/fail criteria.
+  search-cost: Inspect search retries, command errors versus no matches, and returned text volume in raw messages. A bash call can combine search and reading; do not infer search work solely from tool names.
+  total-cost: Compare successful completion, total tool/model calls, input/output tokens, and wall time. Include the input cost of dedicated tool definitions and retries caused by truncated results.

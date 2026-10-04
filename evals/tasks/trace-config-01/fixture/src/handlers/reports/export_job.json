@@ -1,0 +1,5 @@
+{
+  "job": "reports_export",
+  "config_file": "config/profiles/reports-batch.json",
+  "timeout_seconds": 120
+}

@@ -1,7 +1,7 @@
 # Part II 개요
 
 > [!NOTE]
-> - 시작 상태: [`h03`](https://github.com/jammer-droid/HEL/tree/h03) · 완료 상태: `h05` *(예정)*
+> - 시작 상태: [`h03`](https://github.com/jammer-droid/HEL/tree/h03) · 완료 상태: [`h05`](https://github.com/jammer-droid/HEL/tree/h05)
 > - 논문: [§9.7 Repository Context](https://arxiv.org/html/2609.00006v1#S9.SS7), [§13.2 The Twin Absences](https://arxiv.org/html/2609.00006v1#S13.SS2), [§16.5 Memory and Context](https://arxiv.org/html/2609.00006v1#S16.SS5)
 
 ## 현재 구조
@@ -49,7 +49,7 @@ Part I을 마치면서 model은 harness를 통해 사용자가 원하는 작업�
 | Lab | 질문 | 더하는 구조 |
 | --- | --- | --- |
 | [H3 Repository Context](../labs/h03-repository-context/README.md) | 실행 환경 정보를 system prompt로 주고, 작업 디렉터리의 `HEL.md`를 읽어 넣으면, model이 환경과 저장소 규칙을 알아내는 데 드는 호출과 실패는 어떻게 달라질까? | 환경 정보 system prompt, `HEL.md` 읽기 |
-| H4 Repository Search *(예정)* | grep, index, 구조 기반 검색은 실제 탐색 비용을 어떻게 바꾸는가? | 검색 방식 *(예정)* |
+| [H4 Repository Search](../labs/h04-repository-search/README.md) | 파일명·본문 검색을 전용 tool로 제공하면 필요한 코드를 찾는 재시도와 context 사용량이 줄어드는가? | glob·grep, 경로 검사·결과 한도 |
 
 ## 이 Part를 마치면
 
@@ -61,19 +61,21 @@ flowchart TB
         C[HEL.md 읽기]:::new
         L[agent loop]
         T[tool<br/>bash · read_file<br/>write_file · search_replace]
-        S[검색 tool<br/>H4 예정]:::planned
+        S[검색 tool<br/>glob · grep<br/>경로 검사 · 결과 한도]:::new
     end
     P --> L
     C --> L
     L <--> M[model]
     L <--> T
-    L -.-> S
+    L <--> S
+    S <--> RG[ripgrep]
+    RG <--> W
     T <--> W[(작업 디렉터리)]
     W --> C
     classDef new fill:#fff3bf,stroke:#e8590c,color:#000
-    classDef planned stroke-dasharray: 5 5
 ```
 
 - harness는 매 호출에 system prompt, 사용자 지시, tool 정의, 대화 기록을 model에게 보낸다.
 - model은 첫 호출부터 실행 환경을 알고, 작업 디렉터리에 `HEL.md`가 있으면 그 규칙을 함께 받는다.
 - `HEL.md`는 harness가 실행된 작업 디렉터리에서만 읽는다.
+- 검색 tool을 제공하면 model은 pattern과 path로 파일명·본문 검색을 요청할 수 있다. harness는 작업 디렉터리 경계를 검사하고, 경로와 일치 내용으로 결과를 돌려준다.

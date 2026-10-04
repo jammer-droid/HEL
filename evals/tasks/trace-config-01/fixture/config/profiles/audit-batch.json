@@ -1,0 +1,5 @@
+{
+  "storage_bucket": "atlas-audit-exports",
+  "batch_size": 300,
+  "format": "jsonl"
+}

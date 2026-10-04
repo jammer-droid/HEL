@@ -1,0 +1,5 @@
+{
+  "job": "search_export",
+  "config_file": "config/profiles/search-batch.json",
+  "timeout_seconds": 120
+}

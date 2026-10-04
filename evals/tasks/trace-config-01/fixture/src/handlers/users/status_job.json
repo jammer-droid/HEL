@@ -1,0 +1,4 @@
+{
+  "job": "users_status",
+  "config_file": "config/profiles/users-status.json"
+}

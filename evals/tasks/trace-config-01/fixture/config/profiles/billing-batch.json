@@ -1,0 +1,5 @@
+{
+  "storage_bucket": "atlas-billing-exports",
+  "batch_size": 200,
+  "format": "jsonl"
+}

@@ -1,0 +1,14 @@
+{
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/backup/export",
+      "handler_file": "src/handlers/backup/export_job.json"
+    },
+    {
+      "method": "GET",
+      "path": "/backup/status",
+      "handler_file": "src/handlers/backup/status_job.json"
+    }
+  ]
+}

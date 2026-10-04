@@ -1,0 +1,4 @@
+{
+  "job": "search_status",
+  "config_file": "config/profiles/search-status.json"
+}

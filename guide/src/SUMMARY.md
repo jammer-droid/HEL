@@ -27,7 +27,8 @@
 - [Part II 개요](parts/part2-repository-intelligence.md)
 - [H3 Repository Context](labs/h03-repository-context/README.md)
     - [FAQ](labs/h03-repository-context/faq.md)
-- [H4 Repository Search]()
+- [H4 Repository Search](labs/h04-repository-search/README.md)
+    - [FAQ](labs/h04-repository-search/faq.md)
 
 # Part III — Context
 

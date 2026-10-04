@@ -1,0 +1,5 @@
+{
+  "storage_bucket": "atlas-export-archive",
+  "batch_size": 100,
+  "format": "jsonl"
+}

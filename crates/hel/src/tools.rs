@@ -1,10 +1,11 @@
 //! Tools hel offers to the model. H0: `read_file`. H1: `bash`, and the set of tools given to the
-//! model is chosen per run (`--tools`). H2: `write_file`, `search_replace`.
+//! model is chosen per run (`--tools`). H2: `write_file`, `search_replace`. H4: `glob`, `grep`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use crate::search::{self, GLOB, GREP};
 use record::ToolCategory;
 use serde_json::{Value, json};
 
@@ -13,7 +14,7 @@ pub const BASH: &str = "bash";
 pub const WRITE_FILE: &str = "write_file";
 pub const SEARCH_REPLACE: &str = "search_replace";
 
-const KNOWN: &[&str] = &[BASH, READ_FILE, WRITE_FILE, SEARCH_REPLACE];
+const KNOWN: &[&str] = &[BASH, READ_FILE, WRITE_FILE, SEARCH_REPLACE, GLOB, GREP];
 
 /// Tools given when `--tools` is not passed. H1 follows the paper's advice to start from bash.
 pub const DEFAULT: &[&str] = &[BASH];
@@ -68,6 +69,7 @@ impl Toolset {
             BASH => bash(workdir, args),
             WRITE_FILE => write_file(workdir, args),
             SEARCH_REPLACE => search_replace(workdir, args),
+            GLOB | GREP => search::execute(workdir, name, args),
             other => Err(format!("unknown tool: {other}")),
         }
     }
@@ -80,11 +82,15 @@ pub fn category(name: &str) -> ToolCategory {
         READ_FILE => ToolCategory::Read,
         BASH => ToolCategory::Exec,
         WRITE_FILE | SEARCH_REPLACE => ToolCategory::Edit,
+        GLOB | GREP => ToolCategory::Search,
         _ => ToolCategory::Other,
     }
 }
 
 fn definition(name: &str) -> Option<Value> {
+    if matches!(name, GLOB | GREP) {
+        return search::definition(name);
+    }
     const PATH: (&str, &str) = (
         "path",
         "Path of the file, relative to the working directory.",
@@ -326,7 +332,7 @@ mod tests {
 
     #[test]
     fn toolset_rejects_unknown_and_empty_lists_and_drops_duplicates() {
-        assert!(Toolset::new(&["bash", "grep"]).is_err());
+        assert!(Toolset::new(&["bash", "unknown"]).is_err());
         assert!(Toolset::new::<&str>(&[]).is_err());
         let both = Toolset::new(&["bash", "read_file", "bash"]).unwrap();
         let names: Vec<&str> = both

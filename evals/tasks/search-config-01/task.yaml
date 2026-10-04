@@ -1,0 +1,12 @@
+id: search-config-01
+eval_version: eval-v4
+description: 문서·테스트에도 같은 설정명이 있는 저장소에서 webhook dispatcher 구현의 기본값을 찾는다
+instruction: >
+  Find the default RETRY_LIMIT used by the webhook dispatcher implementation in src/.
+  Documentation examples and test scenarios may use different values.
+  Print only the integer value. Do not modify any files.
+fixture: fixture/
+checks:
+  - id: output-exact
+    type: output_exact_match
+    expected_file: expected.txt

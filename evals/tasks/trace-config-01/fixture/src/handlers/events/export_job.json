@@ -1,0 +1,5 @@
+{
+  "job": "events_export",
+  "config_file": "config/profiles/events-batch.json",
+  "timeout_seconds": 120
+}

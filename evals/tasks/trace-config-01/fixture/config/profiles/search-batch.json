@@ -1,0 +1,5 @@
+{
+  "storage_bucket": "atlas-search-exports",
+  "batch_size": 800,
+  "format": "jsonl"
+}

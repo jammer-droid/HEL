@@ -1,0 +1,4 @@
+{
+  "job": "events_status",
+  "config_file": "config/profiles/events-status.json"
+}

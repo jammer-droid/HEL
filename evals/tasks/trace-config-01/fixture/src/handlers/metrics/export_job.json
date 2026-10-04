@@ -1,0 +1,5 @@
+{
+  "job": "metrics_export",
+  "config_file": "config/profiles/metrics-batch.json",
+  "timeout_seconds": 120
+}

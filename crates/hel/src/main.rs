@@ -3,7 +3,8 @@
 //! A model ↔ tool loop. The model is called repeatedly; each tool call it makes is executed and
 //! its result sent back, until the model answers without a tool call or the turn budget runs out.
 //! Tools: `bash`, `read_file` (H1), `write_file`, `search_replace` (H2); `--tools` chooses which
-//! ones the model gets (default: bash). A system message (H3) carries the execution environment
+//! ones the model gets (default: bash). H4 adds ripgrep-backed `glob` and `grep`.
+//! A system message (H3) carries the execution environment
 //! and `HEL.md` from the working directory; `--no-env` and `--no-context-file` leave them out, and
 //! `--context-file <name>` reads another file instead of `HEL.md`.
 //!
@@ -19,6 +20,7 @@
 mod api;
 mod output;
 mod prompt;
+mod search;
 mod tools;
 
 use std::env;
@@ -335,8 +337,8 @@ mod tests {
 
     #[test]
     fn tools_flag_rejects_unknown_names() {
-        let err = parse(&["--tools", "bash,grep"]).err().unwrap();
-        assert!(err.contains("unknown tool: grep"), "{err}");
+        let err = parse(&["--tools", "bash,unknown"]).err().unwrap();
+        assert!(err.contains("unknown tool: unknown"), "{err}");
     }
 
     #[test]

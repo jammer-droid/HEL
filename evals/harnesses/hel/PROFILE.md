@@ -25,6 +25,7 @@ hel --instruction <TEXT> [--tools <a,b>] [--env | --no-env] [--context-file <nam
 - `--record`: record-v0을 쓰고, 같은 디렉터리의 `raw/requests.jsonl`에 요청과 응답 본문을 남긴다(인증 header 제외).
 - `harness.version`: `crates/hel`, `crates/record`를 마지막으로 바꾼 commit. 수정 중이면 `-dirty`, 설치된 `hel`이 소스보다 오래되었으면 `-stale`.
 - `evals`는 `hel`을 환경 변수를 비우고 `PATH=/usr/bin:/bin:/usr/sbin:/sbin`과 `DEEPSEEK_API_KEY`만 주어 실행한다(Claude Code driver와 같은 PATH. eval-v3 이전에는 `/usr/bin:/bin`이라 macOS `/sbin`의 `md5`, `md5sum`을 찾지 못했다).
+- `settings.ripgrep: true`(eval-v4)는 evals 프로세스의 PATH에서 rg를 찾아 run의 `bin/rg`로 복사한다. 복사본 `--version` 실행에 성공한 뒤 그 bin을 고정 PATH 앞에 추가한다. 설정이 없거나 false이면 위 기본 PATH를 유지한다. 원본이 없거나 복사본을 실행할 수 없으면 model API 호출 전에 중단한다. `raw/search-engine.json`에 원본의 canonical 경로, `bin/rg`, 버전 출력을 기록한다. 복사본은 fixture 밖에 있어 검색 대상으로 섞이지 않는다. 서로 비교할 조건에는 같은 설정을 주고, 비교 시 복사본 버전·내용이 같은지 확인한다.
 - `evals`는 PATH에 설치된 `hel`을 우선 사용하고, 없거나 `--build`이면 작업 폴더를 빌드해 쓴다.
 
 ## Tool → category 매핑
@@ -35,5 +36,17 @@ hel --instruction <TEXT> [--tools <a,b>] [--env | --no-env] [--context-file <nam
 | `bash` | exec (H1. 명령 내용과 관계없이 exec. `cat`으로 읽어도 read로 세지 않는다) |
 | `write_file` | edit (H2) |
 | `search_replace` | edit (H2) |
+| `glob`, `grep` | search (H4, rg 기반) |
 
 Lab이 진행되며 tool이 추가되면 이 표를 갱신한다.
+
+## H4 검색 tool
+
+`--tools bash,glob,grep`로 제공한다. 실행 PATH에 ripgrep이 필요하며 evals는 `settings.ripgrep: true`로 준비할 수 있다. 기본 tool은 계속 bash다.
+
+- `glob(pattern, path=".")`: `rg --files --glob`로 파일명 검색, 상대 경로 정렬 결과
+- `grep(pattern, path=".", include?)`: `rg --json --regexp`로 한 줄 단위 정규식 검색. 상대 경로·줄 번호·일치 내용 반환
+- shell 문자열을 만들지 않고 인자 배열로 실행. 검색 경로를 canonicalize해 cwd 밖 접근을 거절하고 디렉터리 순회에서 symlink를 따라가지 않음
+- rg 기본 ignore 우선순위 사용. 명시적 glob/include는 `.gitignore`보다 우선할 수 있음(rg --glob 동작). UTF-8 파일 경로·내용 지원
+- 최대 100 matching lines/paths와 10,000 UTF-8 bytes(잘림 안내 포함). 긴 한 줄은 UTF-8 경계에서 부분 반환 가능. 한도는 model에게 돌려주는 텍스트에 적용되며 rg의 스캔·프로세스 출력 버퍼를 제한하지 않음
+- 일치 없음(exit 1)은 정상 결과, 잘못된 regex/glob·경로·실행 실패는 error. 오류 메시지도 10,000 bytes 안에 제한

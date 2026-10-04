@@ -1,0 +1,14 @@
+{
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/billing/export",
+      "handler_file": "src/handlers/billing/export_job.json"
+    },
+    {
+      "method": "GET",
+      "path": "/billing/status",
+      "handler_file": "src/handlers/billing/status_job.json"
+    }
+  ]
+}

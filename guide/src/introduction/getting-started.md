@@ -6,6 +6,7 @@
 | --- | --- | --- |
 | Rust toolchain (`rustup`, `cargo`) | harness와 측정 도구 빌드 | stable 최신 버전 |
 | git | 소스 받기, Lab checkpoint 이동 | |
+| ripgrep (`rg`, H4부터) | 파일명·본문 검색 tool과 검색 측정 | PATH에서 실행 가능해야 함. `rg --version`으로 확인 |
 | DeepSeek API key | 실험 model 호출 | [비용, 정책, 윤리](cost-policy-ethics.md) 참고 |
 | Claude Code (선택) | 외부 harness와 비교할 때 | 없어도 우리 harness의 실험은 모두 진행할 수 있다 |
 
@@ -66,7 +67,8 @@ git clone https://github.com/jammer-droid/HEL.git
 | [`h02`](https://github.com/jammer-droid/HEL/tree/h02) | H1 완성 상태. `hel`에 bash tool 포함 |
 | [`h03`](https://github.com/jammer-droid/HEL/tree/h03) | H2 완성 상태. `hel`에 편집 tool 포함 |
 | [`h04`](https://github.com/jammer-droid/HEL/tree/h04) | H3 완성 상태. `hel`이 실행 환경 정보와 `HEL.md`를 system message로 보냄 |
-| `h05` *(예정)* | H4 완성 상태 |
+| [`h05`](https://github.com/jammer-droid/HEL/tree/h05) | H4 완성 상태 |
+| `h06` *(예정)* | H5 완성 상태 |
 | `hXX` | H(XX-1) 완성 상태 |
 
 Lab을 시작할 때는 해당 tag에서 branch를 만든다. 예를 들어 H1은 `h01`에서 시작한다.

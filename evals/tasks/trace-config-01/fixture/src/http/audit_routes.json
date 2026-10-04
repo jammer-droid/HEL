@@ -1,0 +1,14 @@
+{
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/audit/export",
+      "handler_file": "src/handlers/audit/export_job.json"
+    },
+    {
+      "method": "GET",
+      "path": "/audit/status",
+      "handler_file": "src/handlers/audit/status_job.json"
+    }
+  ]
+}

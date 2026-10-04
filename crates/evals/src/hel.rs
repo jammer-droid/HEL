@@ -2,6 +2,7 @@
 //! hel writes record.json itself; the collector only reads it back.
 
 use std::error::Error;
+use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -15,6 +16,7 @@ use crate::runner::{self, RunJob};
 
 /// Source paths whose changes make a hel binary out of date.
 const SOURCES: [&str; 2] = ["crates/hel", "crates/record"];
+const SYSTEM_PATH: &str = "/usr/bin:/bin:/usr/sbin:/sbin";
 
 /// The hel executable a run uses.
 pub struct HelBinary {
@@ -143,7 +145,55 @@ fn tool_args(settings: &Value) -> Result<Vec<String>, Box<dyn Error>> {
     }
 }
 
+/// Only opted-in conditions add a run-local rg. The user's remaining PATH is not inherited.
+fn run_path(settings: &Value, run_dir: &Path) -> Result<OsString, Box<dyn Error>> {
+    match settings.get("ripgrep") {
+        None | Some(Value::Bool(false)) => Ok(SYSTEM_PATH.into()),
+        Some(Value::Bool(true)) => {
+            let source = find_on_path("rg")
+                .ok_or("settings.ripgrep requires rg on the evals process PATH")?;
+            prepare_ripgrep(&source, run_dir)
+        }
+        Some(other) => Err(format!("settings.ripgrep must be true or false, got {other}").into()),
+    }
+}
+
+fn prepare_ripgrep(source: &Path, run_dir: &Path) -> Result<OsString, Box<dyn Error>> {
+    let source = source.canonicalize()?;
+    let bin = run_dir.join("bin");
+    fs::create_dir_all(&bin)?;
+    let bin = bin.canonicalize()?;
+    let executable = bin.join("rg");
+    fs::copy(&source, &executable)?;
+    let version = Command::new(&executable)
+        .arg("--version")
+        .env_clear()
+        .env("PATH", SYSTEM_PATH)
+        .stdin(Stdio::null())
+        .output()?;
+    if !version.status.success() {
+        return Err(format!(
+            "copied rg failed --version: {}",
+            String::from_utf8_lossy(&version.stderr).trim()
+        )
+        .into());
+    }
+    fs::write(
+        run_dir.join("raw/search-engine.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "source": source,
+            "executable": "bin/rg",
+            "version": String::from_utf8(version.stdout)?.trim(),
+        }))? + "\n",
+    )?;
+    Ok(std::env::join_paths(
+        std::iter::once(bin).chain(std::env::split_paths(SYSTEM_PATH)),
+    )?)
+}
+
 pub fn run(job: &RunJob) -> Result<Record, Box<dyn Error>> {
+    // Fail before spawning hel (and making model calls) if the requested engine is unavailable.
+    let path = run_path(&job.condition.settings, &job.run_dir)?;
     let context_path = job.run_dir.join("context.json");
     fs::write(
         &context_path,
@@ -162,9 +212,7 @@ pub fn run(job: &RunJob) -> Result<Record, Box<dyn Error>> {
         .arg(&record_path)
         .current_dir(&job.workdir)
         .env_clear()
-        // Same as the Claude Code driver: the system default PATH, including sbin (macOS keeps
-        // md5 and md5sum in /sbin).
-        .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+        .env("PATH", path)
         .env("DEEPSEEK_API_KEY", job.api_key)
         .stdin(Stdio::null())
         .stdout(fs::File::create(job.run_dir.join("raw/stdout.txt"))?)
@@ -234,5 +282,72 @@ mod tests {
         assert!(tool_args(&json!({ "tools": [] })).is_err());
         assert!(tool_args(&json!({ "tools": "bash" })).is_err());
         assert!(tool_args(&json!({ "tools": [1] })).is_err());
+    }
+
+    #[test]
+    fn ripgrep_is_opt_in_and_rejects_non_boolean_settings() {
+        let unused = Path::new("not-created-by-default");
+        assert_eq!(run_path(&json!({}), unused).unwrap(), SYSTEM_PATH);
+        assert_eq!(
+            run_path(&json!({ "ripgrep": false }), unused).unwrap(),
+            SYSTEM_PATH
+        );
+        assert!(run_path(&json!({ "ripgrep": "true" }), unused).is_err());
+    }
+
+    #[test]
+    fn copied_engine_runs_from_isolated_path_and_records_provenance() {
+        let dir = std::env::temp_dir().join(format!("evals-rg-{}", uuid::Uuid::new_v4()));
+        let source = dir.join("source with spaces/rg");
+        fs::create_dir_all(source.parent().unwrap()).unwrap();
+        fs::write(
+            &source,
+            "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'ripgrep test'; else echo \"match:$1\"; fi\n",
+        )
+        .unwrap();
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o755)).unwrap();
+        let run = dir.join("run with spaces");
+        fs::create_dir_all(run.join("raw")).unwrap();
+        let path = prepare_ripgrep(&source, &run).unwrap();
+        let expected: Vec<PathBuf> = std::iter::once(run.join("bin").canonicalize().unwrap())
+            .chain(std::env::split_paths(SYSTEM_PATH))
+            .collect();
+        assert_eq!(std::env::split_paths(&path).collect::<Vec<_>>(), expected);
+        fs::remove_file(&source).unwrap();
+        let output = Command::new("/bin/sh")
+            .args(["-c", "rg needle"])
+            .env_clear()
+            .env("PATH", path)
+            .current_dir(&run)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8(output.stdout).unwrap(), "match:needle\n");
+        let metadata: Value =
+            serde_json::from_str(&fs::read_to_string(run.join("raw/search-engine.json")).unwrap())
+                .unwrap();
+        assert_eq!(metadata["version"], "ripgrep test");
+        assert_eq!(metadata["executable"], "bin/rg");
+        assert!(
+            metadata["source"]
+                .as_str()
+                .unwrap()
+                .ends_with("source with spaces/rg")
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn missing_or_unrunnable_engine_fails_preparation() {
+        let dir = std::env::temp_dir().join(format!("evals-rg-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(dir.join("raw")).unwrap();
+        assert!(prepare_ripgrep(&dir.join("missing"), &dir).is_err());
+        let source = dir.join("broken-rg");
+        fs::write(&source, "#!/bin/sh\necho 'broken engine' >&2\nexit 2\n").unwrap();
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o755)).unwrap();
+        let error = prepare_ripgrep(&source, &dir).unwrap_err();
+        assert!(error.to_string().contains("broken engine"));
+        assert!(!dir.join("raw/search-engine.json").exists());
+        fs::remove_dir_all(dir).unwrap();
     }
 }
