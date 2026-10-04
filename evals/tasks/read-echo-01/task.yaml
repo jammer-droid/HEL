@@ -1,0 +1,17 @@
+id: read-echo-01
+eval_version: eval-v0
+description: 짧은 ASCII 한 줄 파일을 읽고 그대로 출력한다
+instruction: >
+  Read the file hello.txt and print its contents exactly as they are.
+  Do not add anything else.
+fixture: fixture/
+checks:
+  - id: output-exact
+    type: output_exact_match
+    expected_file: fixture/hello.txt
+  - id: single-read
+    type: tool_calls
+    category: read
+    count: 1
+    path: hello.txt
+    not_applicable: [baseline]

@@ -1,0 +1,28 @@
+/* Pagefind 검색 패널. 색은 mdBook 테마 변수를 따라 밝은/어두운 테마에서 함께 바뀐다. */
+#hel-search-panel {
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  padding: 12px 15px 0;
+}
+
+#hel-search-panel[hidden] {
+  display: none;
+}
+
+#hel-search {
+  --pagefind-ui-scale: 0.85;
+  --pagefind-ui-primary: var(--links);
+  --pagefind-ui-text: var(--fg);
+  --pagefind-ui-background: var(--bg);
+  --pagefind-ui-border: var(--searchbar-border-color);
+  --pagefind-ui-tag: var(--quote-bg);
+  --pagefind-ui-border-width: 1px;
+  --pagefind-ui-border-radius: 6px;
+  --pagefind-ui-font: inherit;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--searchbar-border-color);
+}
+
+#hel-search-toggle svg {
+  vertical-align: middle;
+}

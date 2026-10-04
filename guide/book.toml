@@ -1,0 +1,21 @@
+[book]
+title = "Harness Engineering Lab"
+authors = ["jammer-droid"]
+description = "Build, break, measure, and evolve a coding harness from scratch."
+language = "ko"
+src = "src"
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
+[output.html]
+site-url = "/HEL/"
+git-repository-url = "https://github.com/jammer-droid/HEL"
+default-theme = "light"
+preferred-dark-theme = "navy"
+additional-css = ["theme/pagefind-search.css"]
+additional-js = ["mermaid.min.js", "mermaid-init.js", "theme/pagefind-search.js"]
+
+# mdBook 내장 검색은 한국어를 index하지 않는다. 검색은 Pagefind가 담당한다(theme/pagefind-search.js).
+[output.html.search]
+enable = false

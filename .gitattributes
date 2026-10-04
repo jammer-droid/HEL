@@ -1,0 +1,2 @@
+# Task fixtures are compared byte-for-byte: keep LF and intentional whitespace
+evals/tasks/*/fixture/** text eol=lf -whitespace

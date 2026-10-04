@@ -1,0 +1,46 @@
+{
+  "schema_version": "record-v0",
+  "run": {
+    "run_id": "h00-read-echo-01-variant-01",
+    "experiment_id": "h00",
+    "lab": "h00",
+    "task_id": "read-echo-01",
+    "condition": "variant",
+    "repetition": 1,
+    "started_at": "2026-10-03T12:00:00Z",
+    "ended_at": "2026-10-03T12:00:03Z"
+  },
+  "harness": {
+    "name": "hel",
+    "version": "0000000",
+    "comparison_class": "subject"
+  },
+  "model": {
+    "provider": "deepseek",
+    "requested": "deepseek-flash",
+    "actual": "deepseek-flash",
+    "params": {}
+  },
+  "outcome": {
+    "final_output": "Hello, harness!",
+    "termination": "completed",
+    "error": null
+  },
+  "usage": {
+    "input_tokens": { "value": 812, "status": "measured" },
+    "output_tokens": { "value": 95, "status": "measured" },
+    "model_calls": { "value": 2, "status": "measured" },
+    "wall_time_ms": { "value": 3410, "status": "measured" }
+  },
+  "events": [
+    {
+      "seq": 1,
+      "category": "read",
+      "name": "read_file",
+      "args": { "path": "hello.txt" },
+      "ok": true
+    }
+  ],
+  "validity": { "valid": true, "reasons": [] },
+  "artifacts": { "raw_transcript": "raw/requests.jsonl" }
+}

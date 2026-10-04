@@ -1,0 +1,26 @@
+# Secrets — 커밋하지 않는다
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*~
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Rust build output
+/target/
+
+# evals results: kept locally, not tracked
+/results/

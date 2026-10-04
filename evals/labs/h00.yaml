@@ -1,0 +1,35 @@
+# Lab 정의. evals try / run / report가 Lab ID(h00)로 이 파일을 찾는다.
+lab: h00
+title: Minimal Agent
+description: >
+  Compare a single model call with a model-tool loop that has one read_file tool.
+
+model:
+  provider: deepseek
+  id: deepseek-flash
+  params: {}               # thinking은 provider 기본값(켜짐)
+
+budget:
+  max_turns: 5
+  timeout_seconds: 120
+  max_output_tokens: 8192
+
+conditions:                # evals run이 실행하는 비교 조건
+  - name: baseline         # 이 Lab을 시작한 상태의 hel. 코드를 고치기 전에 측정한다
+    harness: hel
+  - name: variant          # 이 Lab에서 만든 hel
+    harness: hel
+  - name: external-claude-code
+    harness: claude-code
+    optional: true         # Claude Code가 설치되어 있지 않으면 건너뛴다
+    settings:
+      tools: [Read]
+
+tasks:
+  - read-echo-01
+
+repetitions: 3
+
+rubric:                    # 채점 기준 설명. 실제 판정은 각 task.yaml의 checks가 한다
+  output-exact: The final output equals the file contents. Only one trailing newline on each side is ignored; nothing else is normalized.
+  single-read: A read tool is called exactly once, on that file. Not applied to baseline.

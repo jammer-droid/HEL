@@ -1,0 +1,10 @@
+# Pagefind 설정. guide/에서 `pagefind --site book`으로 실행한다(build.sh).
+site: book
+# 본문만 index한다. 사이드바와 메뉴는 제외된다.
+root_selector: main
+# 루트의 index.html과 하위 디렉터리의 장(chapter)만 index한다.
+# 루트의 404.html, print.html(전체 인쇄용), toc.html(사이드바)은 제외한다.
+glob: "{index.html,*/**/*.html}"
+# Mermaid 다이어그램의 원본 코드는 검색 결과에 섞이지 않게 제외한다.
+exclude_selectors:
+  - ".mermaid"
