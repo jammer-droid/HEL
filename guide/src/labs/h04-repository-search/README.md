@@ -109,17 +109,73 @@ grep -rn "RETRY_LIMIT" /path/to/HEL --include="*.py" --include="*.md" --include=
 | glob | 파일명 pattern, 검색할 path(생략하면 작업 디렉터리) | 정렬된 상대 경로 목록 |
 | grep | 정규식 pattern, path, 선택적 파일명 include | 상대 경로·줄 번호·일치한 줄 |
 
-shell 명령 문자열을 조립하지 않고 각 인자를 분리해 `rg`에 전달한다. 본문 검색에서 쓰는 호출의 핵심은 다음과 같다.
+먼저 model이 넘긴 검색 경로를 실제 위치로 풀어 작업 디렉터리 안에 있는지 확인한다.
 
 ```rust
-command.args(["--json", "--regexp", pattern]);
-if let Some(include) = include {
-    command.args(["--glob", include]);
+let root = fs::canonicalize(workdir).map_err(|e| format!("working directory: {e}"))?;
+let target = fs::canonicalize(root.join(path)).map_err(|e| format!("{path}: {e}"))?;
+if !target.starts_with(&root) {
+    return Err(format!("{path}: outside the working directory"));
 }
-command.arg("--").arg(relative);
 ```
 
-경로는 작업 디렉터리 안에 있는지 확인한다. 일치 결과가 없으면 정상 결과로 돌려주고, 잘못된 정규식이나 실행 실패는 오류로 돌려준다. 최대 100건·10,000 UTF-8 bytes까지 보여주며, 넘으면 범위를 좁히라는 안내를 붙인다. 한도는 model에게 보내는 응답에 적용한다. 현재 구현은 `rg`의 출력 전체를 받은 뒤 응답을 줄인다.
+`glob`은 디렉터리를, `grep`은 파일이나 디렉터리를 받는다. 검사한 경로를 작업 디렉터리 기준의 상대 경로 `relative`로 바꿔 검색에 쓴다.
+
+검색할 때는 각 인자를 분리해 `rg`에 전달한다. `glob`은 파일 목록을, `grep`은 일치한 내용을 JSON으로 받는다.
+
+```rust
+let mut command = Command::new("rg");
+command.args([
+    "--no-config",
+    "--no-follow",
+    "--sort",
+    "path",
+    "--color",
+    "never",
+]);
+if name == GLOB {
+    command.args(["--files", "--null", "--glob", pattern]);
+} else {
+    command.args(["--json", "--regexp", pattern]);
+    if let Some(include) = include {
+        command.args(["--glob", include]);
+    }
+}
+let output = command
+    .arg("--")
+    .arg(relative)
+    .current_dir(&root)
+    .stdin(Stdio::null())
+    .output()
+    .map_err(|e| format!("could not run ripgrep: {e}"))?;
+```
+
+경로순으로 정렬하고 검색 중 symlink를 따라가지 않도록 옵션을 고정했다. `--` 뒤에는 검색 경로를 넘긴다. 종료 코드 1은 일치한 결과가 없다는 뜻이므로 정상 결과로 돌려주고, 잘못된 정규식이나 실행 실패는 오류로 돌려준다.
+
+받은 결과는 상대 경로 목록이나 `경로:줄 번호:내용`으로 정리한다. 각 항목을 `SearchOutput::push`에 넣으면서 최대 100건(`MAX_MATCHES`)·10,000 UTF-8 bytes(`MAX_BYTES`)까지 담는다.
+
+```rust
+fn push(&mut self, line: &str) -> bool {
+    if self.matches == MAX_MATCHES {
+        self.truncated = true;
+        return false;
+    }
+    self.matches += 1;
+    let remaining = MAX_BYTES - self.text.len();
+    if line.len() + 1 > remaining {
+        self.text.push_str(utf8_prefix(line, remaining));
+        self.truncated = true;
+        return false;
+    }
+    self.text.push_str(line);
+    self.text.push('\n');
+    true
+}
+```
+
+`utf8_prefix`는 UTF-8 문자 경계를 찾아 한글 같은 문자가 중간에서 잘리지 않게 한다. 한도를 넘으면 `truncated`를 표시하고, 마지막 `finish`에서 범위를 좁히라는 안내를 붙인다. 안내문을 포함한 응답 전체가 10,000 bytes 안에 들도록 끝부분을 다시 조정한다.
+
+한도는 model에게 보내는 응답에 적용한다. 현재 구현은 `rg`의 출력 전체를 받은 뒤 응답을 줄인다.
 
 ### 5. 검색 tool을 사용한 결과
 
