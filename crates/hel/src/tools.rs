@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use crate::permissions::{self, Access, Action, Approvable, Approval, Execution, Tool};
 use crate::search::{self, GLOB, GREP};
 use record::ToolCategory;
 use serde_json::{Value, json};
@@ -22,7 +23,7 @@ pub const DEFAULT: &[&str] = &[BASH];
 /// The tools offered in one run: their definitions for the request, and the only names
 /// `execute` will run.
 pub struct Toolset {
-    names: Vec<String>,
+    tools: Vec<Box<dyn Tool>>,
     definitions: Value,
 }
 
@@ -48,7 +49,7 @@ impl Toolset {
         }
         let definitions = Value::Array(kept.iter().filter_map(|n| definition(n)).collect());
         Ok(Toolset {
-            names: kept,
+            tools: kept.iter().map(|name| builtin(name)).collect(),
             definitions,
         })
     }
@@ -58,20 +59,75 @@ impl Toolset {
         &self.definitions
     }
 
-    /// Runs a tool call. Errors are returned as text so the model can see what went wrong.
-    /// A tool that exists but was not given in this run is refused like an unknown one.
+    /// Every production invocation passes through the common permission gate.
+    pub fn call(
+        &self,
+        workdir: &Path,
+        name: &str,
+        args: &Value,
+        access: Access,
+        approval: &mut dyn Approval,
+    ) -> Execution {
+        let tool = self
+            .tools
+            .iter()
+            .find(|tool| tool.name() == name)
+            .map(|tool| tool.as_ref());
+        permissions::execute(tool, name, args, workdir, access, approval)
+    }
+
+    #[cfg(test)]
     pub fn execute(&self, workdir: &Path, name: &str, args: &Value) -> Result<String, String> {
-        if !self.names.iter().any(|n| n == name) {
-            return Err(format!("unknown tool: {name}"));
+        self.call(
+            workdir,
+            name,
+            args,
+            Access::Auto,
+            &mut permissions::Input::Unavailable,
+        )
+        .result
+    }
+}
+
+macro_rules! tool {
+    ($type:ident, $name:expr, $action:expr, $run:expr) => {
+        struct $type;
+        impl Approvable for $type {
+            fn action(&self, _args: &Value) -> Action {
+                $action
+            }
         }
-        match name {
-            READ_FILE => read_file(workdir, args),
-            BASH => bash(workdir, args),
-            WRITE_FILE => write_file(workdir, args),
-            SEARCH_REPLACE => search_replace(workdir, args),
-            GLOB | GREP => search::execute(workdir, name, args),
-            other => Err(format!("unknown tool: {other}")),
+        impl Tool for $type {
+            fn name(&self) -> &'static str {
+                $name
+            }
+            fn run(&self, workdir: &Path, args: &Value) -> Result<String, String> {
+                ($run)(workdir, args)
+            }
         }
+    };
+}
+
+tool!(ReadFile, READ_FILE, Action::Read, read_file);
+tool!(WriteFile, WRITE_FILE, Action::Write, write_file);
+tool!(SearchReplace, SEARCH_REPLACE, Action::Write, search_replace);
+tool!(Bash, BASH, Action::Execute, bash);
+tool!(Glob, GLOB, Action::Read, |dir, args| search::execute(
+    dir, GLOB, args
+));
+tool!(Grep, GREP, Action::Read, |dir, args| search::execute(
+    dir, GREP, args
+));
+
+fn builtin(name: &str) -> Box<dyn Tool> {
+    match name {
+        READ_FILE => Box::new(ReadFile),
+        WRITE_FILE => Box::new(WriteFile),
+        SEARCH_REPLACE => Box::new(SearchReplace),
+        BASH => Box::new(Bash),
+        GLOB => Box::new(Glob),
+        GREP => Box::new(Grep),
+        _ => unreachable!("Toolset validated the registered tool name"),
     }
 }
 
@@ -259,6 +315,76 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("hello.txt"), "Hello, harness!\n").unwrap();
         dir
+    }
+
+    #[test]
+    fn all_builtins_follow_access_levels_without_changing_files_before_approval() {
+        use crate::permissions::{Approval, Input, Response};
+        struct CheckFile {
+            path: PathBuf,
+            response: Response,
+            asked: usize,
+        }
+        impl Approval for CheckFile {
+            fn request(&mut self, _name: &str, _args: &Value) -> Response {
+                assert_eq!(fs::read_to_string(&self.path).unwrap(), "pending\n");
+                self.asked += 1;
+                self.response
+            }
+        }
+        let dir = workdir("permissions");
+        let path = dir.join("status.txt");
+        let tools = Toolset::new(KNOWN).unwrap();
+        let requests = [
+            (WRITE_FILE, json!({"path":"status.txt", "content":"done\n"})),
+            (
+                SEARCH_REPLACE,
+                json!({"path":"status.txt", "search":"pending", "replace":"done"}),
+            ),
+            (BASH, json!({"command":"printf 'done\\n' > status.txt"})),
+        ];
+        for (name, args) in requests {
+            for access in [Access::ReadOnly, Access::Confirm, Access::Auto] {
+                for response in [Response::Approved, Response::Denied, Response::Unavailable] {
+                    fs::write(&path, "pending\n").unwrap();
+                    let mut approval = CheckFile {
+                        path: path.clone(),
+                        response,
+                        asked: 0,
+                    };
+                    let out = tools.call(&dir, name, &args, access, &mut approval);
+                    let allowed = access == Access::Auto
+                        || (access == Access::Confirm && response == Response::Approved);
+                    assert_eq!(
+                        out.result.is_ok(),
+                        allowed,
+                        "{name} {access:?} {response:?}"
+                    );
+                    assert_eq!(out.trace.executed, allowed);
+                    assert_eq!(approval.asked, usize::from(access == Access::Confirm));
+                    assert_eq!(
+                        fs::read_to_string(&path).unwrap(),
+                        if allowed { "done\n" } else { "pending\n" }
+                    );
+                    let read = tools.call(
+                        &dir,
+                        READ_FILE,
+                        &json!({"path":"status.txt"}),
+                        access,
+                        &mut Input::Unavailable,
+                    );
+                    assert!(
+                        read.result.is_ok(),
+                        "reading must still work after a denial"
+                    );
+                }
+            }
+        }
+        // rg-backed search is described by its controlled operation, not by process spawning.
+        for name in [READ_FILE, GLOB, GREP] {
+            assert_eq!(builtin(name).action(&json!({})), Action::Read);
+        }
+        fs::remove_dir_all(dir).unwrap();
     }
 
     fn read_only() -> Toolset {

@@ -64,7 +64,7 @@ Codex와 DeepSeek Harness가 context를 어떻게 재고 나누는지, 한도에
 | Lab | 질문 | 더하는 구조 |
 | --- | --- | --- |
 | [H5 Context Budget](../labs/h05-context-budget/README.md) | Codex와 DeepSeek Harness는 context budget을 어떻게 측정·배분하고, 한도에 가까워지면 무엇을 남기고 버리는가? 각 방식의 장단점은 무엇인가? | context 측정(호출별 크기, cache 적용 token) |
-| [H6 Compaction](../labs/h06-compaction/README.md) | 기존 작업과 같은 환경에서 compaction을 일찍 일으킨 뒤 이어서 작업하면, 작업은 계속되고 호출마다 cache hit는 다시 올라가는가? | 요청 전 크기 추정, 큰 tool 결과 파일 저장, 압축(이전 tool 결과 줄이기 · model 요약 · 최근 원문 유지) |
+| [H6 Compaction](../labs/h06-compaction/README.md) | 기존 작업과 같은 환경에서 compaction을 일찍 일으킨 뒤 이어서 작업하면, 작업은 계속되고 호출마다 cache hit는 다시 올라가는가? | 요청 전 크기 추정, 호출 결과가 정한 크기 범위를 넘으면 파일 저장, 압축(이전 tool 결과 줄이기 · model 요약 · 최근 원문 유지) |
 
 ## 이 Part를 마치면
 
@@ -78,7 +78,7 @@ flowchart TB
         T[tool · 검색 tool]
         B[context 측정<br/>호출별 크기 · cache]:::new
         K[context 관리<br/>요청 전 크기 추정 · 압축]:::new
-        S[큰 tool 결과 저장]:::new
+        S[호출 결과가 정한 범위를<br/>넘으면 파일 저장]:::new
         R[실행 기록]
     end
     P --> L

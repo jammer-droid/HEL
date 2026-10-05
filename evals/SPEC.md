@@ -274,3 +274,9 @@ reasoning/effort 수준, 허용한 tool 목록, system prompt 수정 여부를 L
 | eval-v3 | H3. task `env-checksum-01`, `rule-config-01` 추가. check `ini_value`. hel 조건의 `settings.env` → `--env`, `settings.context_file` → `--context-file`. hel 실행 PATH를 `/usr/bin:/bin:/usr/sbin:/sbin`으로 변경(Claude Code driver와 같게. 이전 `/usr/bin:/bin`). H3 Adopt 후 `settings.env: false` → `--no-env`, `settings.context_file: false` → `--no-context-file` 추가(hel 기본값이 켜짐으로 바뀜). record·verdict 형식 변경 없음 |
 | eval-v4 | H4. task `search-config-01`, `trace-config-01` 추가, `find-echo-01` 재사용. 기존 `output_exact_match` 사용, record·verdict·check 형식 변경 없음. hel `settings.ripgrep: true`는 runner PATH의 rg를 run별 bin/에 복사해 고정 PATH 앞에 추가하고 raw/search-engine.json에 원본 경로·버전을 기록. 누락·false이면 기존 PATH 유지. 원본 없음·복사 실행 실패는 API 호출 전에 중단 |
 | eval-v5 | H6. 세션 task(`turns`, §4) 형식과 task `session-recall-01` 추가. hel driver는 지시 목록을 `raw/turns.json`에 쓰고 `--turns-file`로 넘긴다. hel raw log 항목에 세션 지시 번호 `turn`, harness 보조 요청(예: compaction)에 `purpose`. hel 조건 `settings.compaction: {at_tokens, keep_recent_tokens}` → `--compact-at`/`--keep-recent`, `false` → `--no-compaction`. report에 요청 순서별 cache hit %·context Mermaid 그래프(`purpose` 항목은 그래프에서 빼고 따로 표시)와 run별 보조 요청. record·verdict·check 형식 변경 없음. `DEEPSEEK_API_KEY`가 환경에 없으면 저장소 루트 `.env`에서 읽음 |
+
+### H7 permissions 연결 (eval-v6)
+
+hel 조건의 `settings.access`는 `read-only` / `confirm` / `auto`이며 `--access`로 전달한다. 생략하면 인자를 추가하지 않아 이전 baseline을 실행할 수 있다. `approval_response`는 access=confirm에서만 사용하며 `approve` / `deny` / `unavailable`이다. approve/deny는 run별 `raw/approval-input.json`에 64개의 boolean 응답을 저장하고 `--approval-input`으로 전달한다. 각 ask마다 한 응답을 소비하며 파일을 다 쓰면 거절한다. unavailable은 입력 파일 없이 실행한다. 이 입력 대역은 eval용이고 실제 사용자 승인 측정이 아니다.
+
+H7의 `raw/permissions.jsonl`은 hel 원본 진단 로그다. tool 호출마다 이름·인자, 접근 레벨, 작업 성격, 정책 판정, 승인 응답과 실행 진입 여부를 남긴다. `executed`는 tool 구현에 진입했다는 뜻이며 성공 여부는 record의 event.ok로 본다. record-v0 필드는 변경하지 않는다. 기존 tool_calls는 호출 시도를 세므로 실행 횟수로 해석하지 않는다.

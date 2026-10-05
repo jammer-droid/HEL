@@ -127,6 +127,21 @@ fn hel_args(settings: &Value) -> Result<Vec<String>, Box<dyn Error>> {
         }
     }
     args.extend(compaction_args(settings)?);
+    if let Some(level) = settings.get("access") {
+        let level = level
+            .as_str()
+            .filter(|v| matches!(*v, "read-only" | "confirm" | "auto"))
+            .ok_or("settings.access must be read-only, confirm, or auto")?;
+        args.extend(["--access".to_string(), level.to_string()]);
+    }
+    if let Some(response) = settings.get("approval_response") {
+        if settings.get("access").and_then(Value::as_str) != Some("confirm") {
+            return Err("settings.approval_response requires access: confirm".into());
+        }
+        if !matches!(response.as_str(), Some("approve" | "deny" | "unavailable")) {
+            return Err("settings.approval_response must be approve, deny, or unavailable".into());
+        }
+    }
     Ok(args)
 }
 
@@ -235,6 +250,22 @@ pub fn run(job: &RunJob) -> Result<Record, Box<dyn Error>> {
         serde_json::to_string_pretty(&job.ctx)? + "\n",
     )?;
     let record_path = job.run_dir.join("record.json");
+    let args = hel_args(&job.condition.settings)?;
+    let approval_input = match job
+        .condition
+        .settings
+        .get("approval_response")
+        .and_then(Value::as_str)
+    {
+        Some("approve" | "deny") => {
+            // Finite, run-local responses for deterministic evaluation; not a production mode.
+            let path = job.run_dir.join("raw/approval-input.json");
+            let approved = job.condition.settings["approval_response"] == "approve";
+            fs::write(&path, serde_json::to_string(&vec![approved; 64])? + "\n")?;
+            Some(path)
+        }
+        _ => None,
+    };
 
     let hel = job.hel.ok_or("no hel binary resolved")?;
     let mut command = Command::new(&hel.path);
@@ -245,8 +276,11 @@ pub fn run(job: &RunJob) -> Result<Record, Box<dyn Error>> {
         fs::write(&turns_path, serde_json::to_string_pretty(job.turns)? + "\n")?;
         command.arg("--turns-file").arg(&turns_path);
     }
+    if let Some(path) = approval_input {
+        command.arg("--approval-input").arg(path);
+    }
     command
-        .args(hel_args(&job.condition.settings)?)
+        .args(args)
         .arg("--context")
         .arg(&context_path)
         .arg("--record")
@@ -294,6 +328,21 @@ pub fn run(job: &RunJob) -> Result<Record, Box<dyn Error>> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn access_settings_are_validated_before_execution() {
+        assert!(hel_args(&json!({"access":"oops"})).is_err());
+        assert!(hel_args(&json!({"approval_response":"approve"})).is_err());
+        assert!(hel_args(&json!({"access":"confirm", "approval_response":"yes"})).is_err());
+        assert_eq!(
+            hel_args(&json!({"access":"read-only"})).unwrap(),
+            ["--access", "read-only"]
+        );
+        for response in ["approve", "deny", "unavailable"] {
+            assert!(hel_args(&json!({"access":"confirm", "approval_response":response})).is_ok());
+        }
+        assert!(hel_args(&json!({})).unwrap().is_empty());
+    }
 
     #[test]
     fn no_tools_setting_adds_no_flag() {

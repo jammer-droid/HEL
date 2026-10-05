@@ -76,7 +76,8 @@ git clone https://github.com/jammer-droid/HEL.git
 | [`h05`](https://github.com/jammer-droid/HEL/tree/h05) | H4 완성 상태 |
 | [`h06`](https://github.com/jammer-droid/HEL/tree/h06) | H5 완성 상태 |
 | [`h07`](https://github.com/jammer-droid/HEL/tree/h07) | H6 완성 상태. `hel`이 context를 기본으로 압축함 |
-| `h08` *(예정)* | H7 완성 상태 |
+| [`h08`](https://github.com/jammer-droid/HEL/tree/h08) | H7 완성 상태. 접근 레벨과 호출별 승인 |
+| `h09` *(예정)* | H8 완성 상태 |
 | `hXX` | H(XX-1) 완성 상태 |
 
 Lab을 시작할 때는 해당 tag에서 branch를 만든다. 예를 들어 H1은 `h01`에서 시작한다.

@@ -12,10 +12,10 @@
 ## 실행 규약
 
 ```text
-hel (--instruction <TEXT> | --turns-file <turns.json>) [--compact-at N --keep-recent M | --no-compaction] [--tools <a,b>] [--env | --no-env] [--context-file <name> | --no-context-file] [--context <run-context.json> --record <record.json>]
+hel (--instruction <TEXT> | --turns-file <turns.json>) [--compact-at N --keep-recent M | --no-compaction] [--access read-only|confirm|auto] [--tools <a,b>] [--env | --no-env] [--context-file <name> | --no-context-file] [--context <run-context.json> --record <record.json>]
 ```
 
-- context 관리(H6, Adopt 이후 기본으로 켜짐): 요청 전 추정 context가 `min(W × 0.8, W − O − 65,536)`(W=1,000,000, O=출력 한도)을 넘으면 8,192자 넘는 이전 tool 결과를 줄이고, 그래도 넘으면 system 다음의 오래된 구간을 model 요약으로 바꾼다. 최근 `(W − O) × 0.16`은 원문 유지. 12,500 token 넘는 tool 결과는 임시 파일에 저장하고 앞·뒤·경로만 보낸다. `--compact-at N --keep-recent M`으로 기준을 바꾸고 `--no-compaction`으로 끈다. Lab 정의의 `settings.compaction: {at_tokens, keep_recent_tokens}` / `false`가 이 인자가 된다. 요약 요청은 raw log에 `purpose: compaction`으로 남는다(`h06`의 `hel`에는 없다).
+- context 관리(H6, Adopt 이후 기본으로 켜짐): 요청 전 추정 context가 `min(W × 0.8, W − O − 65,536)`(W=1,000,000, O=출력 한도)을 넘으면 8,192자 넘는 이전 tool 결과를 줄이고, 그래도 넘으면 system 다음의 오래된 구간을 model 요약으로 바꾼다. 최근 `(W − O) × 0.16`은 원문 유지. 12,500 token 넘는 tool 결과는 `<임시 폴더>/hel-spill/`(0700)에 짐작할 수 없는 이름의 0600 파일로 저장하고 앞·뒤·경로만 보낸다. hel이 시작할 때 1일 지난 파일을 지운다. `--compact-at N --keep-recent M`으로 기준을 바꾸고 `--no-compaction`으로 끈다. Lab 정의의 `settings.compaction: {at_tokens, keep_recent_tokens}` / `false`가 이 인자가 된다. 요약 요청은 raw log에 `purpose: compaction`으로 남는다(`h06`의 `hel`에는 없다).
 - `--turns-file <turns.json>`: JSON 문자열 목록의 지시를 한 세션에서 차례로 보낸다(H6, eval-v5 세션 task). `max_turns`는 지시마다 적용한다. record는 하나이고 최종 출력은 마지막 지시의 답이다. 한 지시가 오류·한도로 끝나면 남은 지시는 보내지 않는다. raw log 항목에 `turn`(1부터)을 남긴다.
 
 - `--tools`: model에게 줄 tool 목록(쉼표 구분). 없으면 `hel`의 기본 tool 구성을 쓴다(H0·`h01`: `read_file`, H1부터: `bash`). 측정 조건은 기본값에 기대지 않고 `settings.tools`로 명시한다. Lab 정의의 hel 조건에 `settings.tools`가 있으면 runner가 이 인자로 넘긴다. H1에서 추가(`h01`의 `hel`에는 없다. baseline 조건에는 `settings.tools`를 두지 않는다).
@@ -53,3 +53,13 @@ Lab이 진행되며 tool이 추가되면 이 표를 갱신한다.
 - rg 기본 ignore 우선순위 사용. 명시적 glob/include는 `.gitignore`보다 우선할 수 있음(rg --glob 동작). UTF-8 파일 경로·내용 지원
 - 최대 100 matching lines/paths와 10,000 UTF-8 bytes(잘림 안내 포함). 긴 한 줄은 UTF-8 경계에서 부분 반환 가능. 한도는 model에게 돌려주는 텍스트에 적용되며 rg의 스캔·프로세스 출력 버퍼를 제한하지 않음
 - 일치 없음(exit 1)은 정상 결과, 잘못된 regex/glob·경로·실행 실패는 error. 오류 메시지도 10,000 bytes 안에 제한
+
+## H7 권한
+
+`--access` 기본값은 `confirm`이다. `read-only`는 읽기·검색만 허용, `confirm`은 변경·범용 실행마다 1회 확인, `auto`는 등록된 tool 호출을 확인 없이 허용한다. 기존 파일 경계와 tool 인자 검사는 그대로 적용한다. bash는 명령 내용과 관계없이 범용 실행으로 분류한다.
+
+TTY가 있으면 호출 이름·JSON 인자를 표시하고 y/yes에만 승인한다. 빈 입력·그 밖의 답은 거절, EOF/입력 오류와 비대화형 입력은 unavailable로 거절한다. `--approval-input`은 eval의 `--context`·`--record`·confirm 조건에서만 허용하는 JSON boolean 응답 파일이며, ask 한 번마다 하나씩 소비한다. 고갈되면 unavailable이다. 승인 캐시나 세션 전체 허용은 없다.
+
+`raw/permissions.jsonl`은 각 호출의 access/action/decision/approval/executed를 남긴다. seq는 record.events와 대응한다. executed는 tool 구현 진입 여부이며, 파일 변경 성공 여부는 별도다. record-v0은 유지한다. H7 이전 baseline에는 이 로그가 없다.
+
+이 버전에서 이전 Lab을 재실행할 때는 예전 승인 없는 동작이 필요하면 조건에 `access: auto`를 명시해야 한다. 이전 결과를 새 코드로 덮어쓰지 않는다. H7에서는 코드를 바꾸기 전에 baseline을 저장했다.

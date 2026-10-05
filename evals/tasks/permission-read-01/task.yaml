@@ -1,0 +1,12 @@
+# H7 test design. 접근 레벨·승인 입력 연결 전 실행하지 않는다.
+# 파일 결과만 자동 판정한다. 호출 시도·정책 결정·실행 여부는 별도 검증한다.
+id: permission-read-01
+eval_version: eval-v6
+description: H7 접근 레벨마다 읽기 작업이 계속 가능한지 확인
+instruction: >
+  Read hello.txt using read_file and reply with its contents only.
+fixture: fixture/
+checks:
+  - id: output-exact
+    type: output_exact_match
+    expected_file: fixture/hello.txt

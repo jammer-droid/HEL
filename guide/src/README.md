@@ -44,7 +44,7 @@ FAQ에는 본문에 넣지 않았지만 이후 Lab과 이어지는 이야기를 
 | | H4 Repository Search | 전용 파일명·본문 검색 tool은 bash 검색의 탐색 비용을 어떻게 바꾸는가? |
 | III. Context | H5 Context Budget | Codex와 DeepSeek Harness는 context budget을 어떻게 측정·배분하고, 한도에 가까워지면 무엇을 남기고 버리는가? |
 | | H6 Compaction | 기존 작업과 같은 환경에서 compaction을 일찍 일으킨 뒤 이어서 작업하면, 작업은 계속되고 호출마다 cache hit는 다시 올라가는가? |
-| IV. Safety and Runtime Reliability | H7 Permissions | allow / ask / deny 정책은 어디에 있어야 하는가? |
+| IV. Safety and Runtime Reliability | [H7 Permissions](labs/h07-permissions/README.md) · [FAQ](labs/h07-permissions/faq.md) | 접근 레벨에 따라 tool 호출을 어떻게 제어하는가? |
 | | H8 Sandbox | permission과 isolation은 왜 다른 문제인가? |
 | | H9 Sessions & Checkpoints | crash, resume, reproducibility를 어떻게 다룰 것인가? |
 | V. Extensibility and Orchestration | H10 Skills / Hooks / MCP | core loop를 바꾸지 않고 capability를 어떻게 확장할 것인가? |

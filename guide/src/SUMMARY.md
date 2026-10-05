@@ -42,7 +42,9 @@
 
 # Part IV — Safety and Runtime Reliability
 
-- [H7 Permissions]()
+- [Part IV 개요](parts/part4-safety-runtime.md)
+- [H7 Permissions](labs/h07-permissions/README.md)
+    - [FAQ](labs/h07-permissions/faq.md)
 - [H8 Sandbox]()
 - [H9 Sessions & Checkpoints]()
 

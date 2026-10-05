@@ -26,6 +26,7 @@
 mod api;
 mod context;
 mod output;
+mod permissions;
 mod prompt;
 mod search;
 mod tools;
@@ -44,6 +45,7 @@ use record::{
 use serde_json::{Value, json};
 
 use output::RunLog;
+use permissions::{Access, Approval};
 use tools::Toolset;
 
 struct Args {
@@ -55,6 +57,8 @@ struct Args {
     context: Option<PathBuf>,
     record: Option<PathBuf>,
     compaction: Compaction,
+    access: Access,
+    approval_input: Option<PathBuf>,
 }
 
 /// How context management is chosen on the command line.
@@ -91,6 +95,12 @@ fn main() -> ExitCode {
 
 fn run() -> Result<(), Box<dyn Error>> {
     let args = parse_args(env::args().skip(1))?;
+    // Spilled tool results from earlier runs are kept for a day, then removed here.
+    context::clean_spills(
+        &context::spill_root(),
+        context::SPILL_RETENTION,
+        SystemTime::now(),
+    );
     let ctx = match &args.context {
         Some(path) => serde_json::from_str(&fs::read_to_string(path)?)?,
         None => manual_context(),
@@ -104,6 +114,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         Duration::from_secs(ctx.budget.timeout_seconds),
     )?;
     let workdir = env::current_dir()?;
+    let mut approval = permissions::Input::new(args.approval_input.as_deref())?;
     let system = prompt::system_message(args.env, args.context_file.as_deref(), &workdir);
     let compaction = args.compaction.policy(ctx.budget.max_output_tokens);
     let inputs: Vec<String> = match (&args.instruction, &args.turns_file) {
@@ -117,6 +128,8 @@ fn run() -> Result<(), Box<dyn Error>> {
                 system,
                 ctx.budget.max_turns,
                 compaction.as_ref(),
+                args.access,
+                &mut approval,
             );
         }
     };
@@ -136,11 +149,13 @@ fn run() -> Result<(), Box<dyn Error>> {
         log.final_output = None;
         messages.push(json!({ "role": "user", "content": input }));
         run_loop(
-            &Session {
+            &mut Session {
                 client: &client,
                 workdir: &workdir,
                 tools: &args.tools,
                 compaction: compaction.as_ref(),
+                access: args.access,
+                approval: &mut approval,
             },
             &mut messages,
             &mut meter,
@@ -172,6 +187,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 
 /// Interactive mode: reads one line at a time and runs the loop on it with the conversation so
 /// far. `max_turns` applies to each input. Ends on `/exit` or end of input (Ctrl-D).
+#[allow(clippy::too_many_arguments)]
 fn chat(
     client: &api::Client,
     workdir: &Path,
@@ -179,15 +195,19 @@ fn chat(
     system: Option<Value>,
     max_turns: u32,
     compaction: Option<&context::Policy>,
+    access: Access,
+    approval: &mut dyn Approval,
 ) -> Result<(), Box<dyn Error>> {
     let stdin = io::stdin();
     let mut messages: Vec<Value> = system.into_iter().collect();
     let mut meter = context::Meter::default();
-    let session = Session {
+    let mut session = Session {
         client,
         workdir,
         tools,
         compaction,
+        access,
+        approval,
     };
     eprintln!("hel — type /exit or press Ctrl-D to quit");
     loop {
@@ -208,7 +228,7 @@ fn chat(
 
         messages.push(json!({ "role": "user", "content": input }));
         let mut log = RunLog::new();
-        run_loop(&session, &mut messages, &mut meter, max_turns, &mut log);
+        run_loop(&mut session, &mut messages, &mut meter, max_turns, &mut log);
 
         for event in &log.events {
             let status = if event.ok == Some(false) {
@@ -241,10 +261,12 @@ struct Session<'a> {
     workdir: &'a Path,
     tools: &'a Toolset,
     compaction: Option<&'a context::Policy>,
+    access: Access,
+    approval: &'a mut dyn Approval,
 }
 
 fn run_loop(
-    session: &Session,
+    session: &mut Session,
     messages: &mut Vec<Value>,
     meter: &mut context::Meter,
     max_turns: u32,
@@ -255,7 +277,9 @@ fn run_loop(
         workdir,
         tools,
         compaction,
-    } = *session;
+        access,
+        approval,
+    } = session;
     for _ in 0..max_turns {
         if let Some(policy) = compaction {
             context::before_request(messages, policy, meter, log, &mut |request| {
@@ -308,7 +332,9 @@ fn run_loop(
                 .as_str()
                 .and_then(|raw| serde_json::from_str(raw).ok())
                 .unwrap_or_else(|| json!({}));
-            let result = tools.execute(workdir, name, &args);
+            let execution = tools.call(workdir, name, &args, *access, *approval);
+            log.permissions.push(execution.trace);
+            let result = execution.result;
             log.events.push(ToolEvent {
                 seq: log.events.len() as u32 + 1,
                 category: tools::category(name),
@@ -348,6 +374,8 @@ fn read_turns(path: &Path) -> Result<Vec<String>, Box<dyn Error>> {
 }
 
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
+    let mut access = Access::Confirm;
+    let mut approval_input = None;
     let mut instruction = None;
     let mut turns_file = None;
     let mut compact_at = None;
@@ -361,6 +389,8 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     while let Some(flag) = args.next() {
         let mut value = || args.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
+            "--access" => access = Access::parse(&value()?)?,
+            "--approval-input" => approval_input = Some(PathBuf::from(value()?)),
             "--instruction" => instruction = Some(value()?),
             "--turns-file" => turns_file = Some(PathBuf::from(value()?)),
             "--compact-at" => compact_at = Some(tokens(&flag, &value()?)?),
@@ -401,11 +431,21 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     if context.is_some() && instruction.is_none() && turns_file.is_none() {
         return Err("--context needs --instruction or --turns-file".to_string());
     }
+    if approval_input.is_some()
+        && (context.is_none() || record.is_none() || access != Access::Confirm)
+    {
+        return Err(
+            "--approval-input requires --context, --record and --access confirm (eval only)"
+                .to_string(),
+        );
+    }
     let tools = match tools {
         Some(tools) => tools,
         None => Toolset::new(tools::DEFAULT)?,
     };
     Ok(Args {
+        access,
+        approval_input,
         instruction,
         turns_file,
         compaction,
@@ -462,6 +502,33 @@ mod tests {
 
     fn parse(list: &[&str]) -> Result<Args, String> {
         parse_args(list.iter().map(|s| s.to_string()))
+    }
+
+    #[test]
+    fn access_defaults_to_confirmation_and_eval_input_requires_explicit_context() {
+        assert_eq!(parse(&[]).unwrap().access, Access::Confirm);
+        assert_eq!(parse(&["--access", "auto"]).unwrap().access, Access::Auto);
+        assert_eq!(
+            parse(&["--access", "read-only"]).unwrap().access,
+            Access::ReadOnly
+        );
+        assert!(parse(&["--access", "unknown"]).is_err());
+        assert!(parse(&["--approval-input", "answers.json"]).is_err());
+        let common = [
+            "--instruction",
+            "edit",
+            "--context",
+            "ctx.json",
+            "--record",
+            "record.json",
+            "--approval-input",
+            "answers.json",
+        ];
+        assert!(parse(&common).is_ok());
+        let mut bad = common.to_vec();
+        bad.extend(["--access", "auto"]);
+        assert!(parse(&bad).is_err());
+        assert_eq!(manual_context().budget.max_output_tokens, 8192);
     }
 
     #[test]

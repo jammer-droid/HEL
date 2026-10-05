@@ -29,6 +29,7 @@ pub struct RunLog {
     model_calls: u32,
     actual_model: Option<String>,
     pub events: Vec<ToolEvent>,
+    pub permissions: Vec<crate::permissions::Trace>,
     /// Session turn (1-based) written next to each raw entry; `None` outside session runs.
     pub turn: Option<u32>,
     pub final_output: Option<String>,
@@ -48,6 +49,7 @@ impl RunLog {
             model_calls: 0,
             actual_model: None,
             events: Vec::new(),
+            permissions: Vec::new(),
             turn: None,
             final_output: None,
             termination: Termination::Completed,
@@ -169,6 +171,12 @@ impl RunLog {
             writeln!(raw, "{}", serde_json::to_string(entry)?)?;
         }
 
+        let mut permissions = fs::File::create(run_dir.join("raw/permissions.jsonl"))?;
+        for (index, entry) in self.permissions.iter().enumerate() {
+            let mut value = serde_json::to_value(entry)?;
+            value["seq"] = json!(index + 1);
+            writeln!(permissions, "{}", serde_json::to_string(&value)?)?;
+        }
         let record = self.to_record(ctx, started, ended, wall_time_ms);
         fs::write(record_path, serde_json::to_string_pretty(&record)? + "\n")?;
         Ok(())

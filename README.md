@@ -36,7 +36,8 @@ harness 구현은 바이브 코딩으로 진행한다. 코드를 작성하는 �
 | [`h05`](https://github.com/jammer-droid/HEL/tree/h05) | H4 완료 상태 |
 | [`h06`](https://github.com/jammer-droid/HEL/tree/h06) | H5 완료 상태 |
 | [`h07`](https://github.com/jammer-droid/HEL/tree/h07) | H6 완료 상태. `hel`이 context를 기본으로 압축함(`--no-compaction`으로 끔) |
-| `h08` *(예정)* | H7 완료 상태 |
+| [`h08`](https://github.com/jammer-droid/HEL/tree/h08) | H7 완료 상태. 접근 레벨과 호출별 승인 |
+| `h09` *(예정)* | H8 완료 상태 |
 
 ```bash
 git clone https://github.com/jammer-droid/HEL.git
@@ -100,9 +101,10 @@ hel --instruction "Read the file hello.txt and print its contents exactly as the
 `--instruction`을 주면 지시 하나를 실행하고 끝난다.
 
 - 실행한 폴더를 작업 디렉터리로 쓴다. `read_file`, `write_file`, `search_replace` tool은 이 폴더 안의 파일만 다룬다.
-- `--tools`를 생략하면 `bash` tool 하나만 준다. model이 쓴 명령을 이 폴더에서 그대로 실행한다.
+- `--tools`를 생략하면 `bash` tool 하나만 준다. model이 쓴 명령을 이 폴더에서 실행한다.
+- H7부터 `--access confirm`이 기본이다. 읽기·검색은 허용하고 파일 변경·bash 실행은 호출마다 확인한다. `--access read-only`는 변경·bash를 거절하며, `--access auto`는 추가 확인 없이 실행한다. 입력을 받을 수 없는 확인 요청은 거절한다.
 - H4 검색 tool은 `--tools bash,glob,grep`로 제공한다. PATH에 ripgrep(`rg`)이 필요하다. `glob`은 파일명, `grep`은 본문을 검색하고 결과가 100건·10KB를 넘으면 잘림을 표시한다.
-- 대화가 길어지면 context를 관리한다(H6). 요청 전 추정 context가 약 800K token(`deepseek-flash` window 1M 기준)을 넘으면 오래된 대화를 model이 요약하게 해 바꾸고 최근 대화는 원문으로 둔다. 12,500 token을 넘는 tool 결과는 임시 파일에 저장하고 앞·뒤와 경로만 보낸다. `--compact-at <tokens> --keep-recent <tokens>`로 기준을 바꾸고 `--no-compaction`으로 끈다.
+- 대화가 길어지면 context를 관리한다(H6). 요청 전 추정 context가 약 800K token(`deepseek-flash` window 1M 기준)을 넘으면 오래된 대화를 model이 요약하게 해 바꾸고 최근 대화는 원문으로 둔다. 12,500 token을 넘는 tool 결과는 임시 폴더의 `hel-spill/`에 저장하고 앞·뒤와 경로만 보낸다(현재 사용자만 읽기 가능, 시작할 때 하루 지난 파일 삭제). `--compact-at <tokens> --keep-recent <tokens>`로 기준을 바꾸고 `--no-compaction`으로 끈다.
 - 실행 환경 정보(OS, shell, 작업 디렉터리)와 이 폴더의 `HEL.md`를 system message로 함께 보낸다. `HEL.md`가 없으면 환경 정보만 보낸다. 상위 폴더의 `HEL.md`는 읽지 않는다.
 - 출력과 오류 메시지는 영어다.
 
