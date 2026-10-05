@@ -1,6 +1,6 @@
 # Eval Specification
 
-> eval-v0
+> eval-v7
 
 이 문서는 harness를 평가하는 절차를 harness와 무관한 형태로 정의한다. 직접 만드는 harness(`hel`)와 외부 harness(Claude Code, OpenCode, Codex 등)는 같은 task를 같은 절차로 실행하고, 같은 형식의 결과를 만든다. **새 harness를 추가할 때 바뀌는 부분은 driver와 collector뿐이다.**
 
@@ -71,7 +71,8 @@ description: 짧은 ASCII 한 줄 파일을 읽고 그대로 출력한다
 instruction: >
   Read the file hello.txt and print its contents exactly as they are.
   Do not add anything else.
-fixture: fixture/            # run마다 임시 디렉터리로 복사되어 harness의 작업 디렉터리가 된다
+fixture: fixture/            # run마다 임시 디렉터리로 복사
+fixture_workdir: .           # 복사본 안에서 harness가 작업할 디렉터리 (기본 .)
 checks:
   - id: output-exact
     type: output_exact_match
@@ -83,6 +84,8 @@ checks:
     path: hello.txt          # 인자 경로를 작업 디렉터리 기준으로 resolve해 비교
     not_applicable: [baseline]
 ```
+
+**작업 경로 밖의 시험 파일 (eval-v7)**: `fixture_workdir`를 `workspace` 등 fixture 내부 디렉터리로 지정하면 harness의 cwd는 그 하위 경로가 된다. 형제 경로에는 시험용 보호 파일을 둘 수 있다. 절대 경로·`..`·복사본 밖으로 나가는 링크·파일 경로는 작업 디렉터리로 허용하지 않는다. 생략하면 기존처럼 fixture 전체가 cwd다. `evals try --fixture`로 바꾸는 복사본에도 같은 하위 경로가 있어야 한다. runner는 실행 후 cwd를 `workspace/`, 전체 복사본을 `fixture/`에 보존한다(둘 다 symlink 제외). `file_exact_match`의 `scope: fixture`는 전체 fixture 사본 기준으로 검사하고, 생략 또는 `scope: workspace`는 기존 cwd 사본 기준이다. 실제 사용자 파일을 보호 fixture로 사용하지 않는다.
 
 **세션 task (eval-v5)**: `instruction` 대신 `turns`에 지시 목록을 쓰면 harness가 한 세션에서 지시를 차례로 보낸다. 앞 지시의 대화는 다음 지시로 이어지고, record는 run당 하나이며 `outcome.final_output`은 마지막 지시의 답이다. `instruction`과 `turns` 중 정확히 하나만 쓴다. 지원하는 driver는 hel(`--turns-file`)뿐이며, claude-code driver는 세션 task를 실행하지 않고 오류를 낸다. `evals try --instruction`으로 세션 task의 지시를 바꿀 수 없다.
 
@@ -280,3 +283,9 @@ reasoning/effort 수준, 허용한 tool 목록, system prompt 수정 여부를 L
 hel 조건의 `settings.access`는 `read-only` / `confirm` / `auto`이며 `--access`로 전달한다. 생략하면 인자를 추가하지 않아 이전 baseline을 실행할 수 있다. `approval_response`는 access=confirm에서만 사용하며 `approve` / `deny` / `unavailable`이다. approve/deny는 run별 `raw/approval-input.json`에 64개의 boolean 응답을 저장하고 `--approval-input`으로 전달한다. 각 ask마다 한 응답을 소비하며 파일을 다 쓰면 거절한다. unavailable은 입력 파일 없이 실행한다. 이 입력 대역은 eval용이고 실제 사용자 승인 측정이 아니다.
 
 H7의 `raw/permissions.jsonl`은 hel 원본 진단 로그다. tool 호출마다 이름·인자, 접근 레벨, 작업 성격, 정책 판정, 승인 응답과 실행 진입 여부를 남긴다. `executed`는 tool 구현에 진입했다는 뜻이며 성공 여부는 record의 event.ok로 본다. record-v0 필드는 변경하지 않는다. 기존 tool_calls는 호출 시도를 세므로 실행 횟수로 해석하지 않는다.
+
+### H8 격리 측정 준비 (eval-v7)
+
+`fixture_workdir`와 `file_exact_match.scope`로 프로젝트 밖의 시험 파일을 배치·보존·판정한다. record-v0과 verdict-v0 형식은 유지한다. 추가 task는 `sandbox-workspace-01`, `sandbox-outside-01`, `spill-read-01`이다.
+
+H8의 두 조건은 같은 access=auto와 compaction 설정을 사용한다. 기존 hel 코드로 baseline을 먼저 저장하고, sandbox 기본 적용과 read_file 보완 후 variant를 실행한다. 두 조건의 CLI 설정이 같아도 실행한 hel 소스 버전이 다르므로 기록된 버전을 함께 확인한다. 정답과 파일 상태만으로 실제 격리를 증명하지 않으며, raw 호출 기록·스크립트 보존·직접 sandbox test를 함께 해석한다.

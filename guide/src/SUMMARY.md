@@ -45,7 +45,8 @@
 - [Part IV 개요](parts/part4-safety-runtime.md)
 - [H7 Permissions](labs/h07-permissions/README.md)
     - [FAQ](labs/h07-permissions/faq.md)
-- [H8 Sandbox]()
+- [H8 Sandbox](labs/h08-sandbox/README.md)
+    - [FAQ](labs/h08-sandbox/faq.md)
 - [H9 Sessions & Checkpoints]()
 
 # Part V — Extensibility and Orchestration

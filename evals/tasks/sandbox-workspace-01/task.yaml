@@ -1,0 +1,23 @@
+id: sandbox-workspace-01
+eval_version: eval-v7
+description: 외부 프로그램과 자식 shell의 정상 프로젝트 파일 작업
+instruction: >
+  Use bash to run exactly /bin/sh work.sh once. Do not edit or inspect the script.
+  Return its stdout exactly, without explanation or code fences.
+fixture: fixture/
+checks:
+  - id: project-changed
+    type: file_exact_match
+    path: status.txt
+    expected_file: expected/status.txt
+  - id: output-exact
+    type: output_exact_match
+    expected_file: expected/status.txt
+  - id: script-preserved
+    type: file_exact_match
+    path: work.sh
+    expected_file: fixture/work.sh
+  - id: exec-attempt
+    type: tool_calls
+    category: exec
+    count: 1

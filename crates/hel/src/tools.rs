@@ -1,9 +1,14 @@
 //! Tools hel offers to the model. H0: `read_file`. H1: `bash`, and the set of tools given to the
 //! model is chosen per run (`--tools`). H2: `write_file`, `search_replace`. H4: `glob`, `grep`.
 
+#[cfg(test)]
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::path::Path;
+#[cfg(test)]
+use std::path::PathBuf;
+
+use crate::runtime::Runtime;
 
 use crate::permissions::{self, Access, Action, Approvable, Approval, Execution, Tool};
 use crate::search::{self, GLOB, GREP};
@@ -62,7 +67,7 @@ impl Toolset {
     /// Every production invocation passes through the common permission gate.
     pub fn call(
         &self,
-        workdir: &Path,
+        runtime: &Runtime,
         name: &str,
         args: &Value,
         access: Access,
@@ -73,13 +78,13 @@ impl Toolset {
             .iter()
             .find(|tool| tool.name() == name)
             .map(|tool| tool.as_ref());
-        permissions::execute(tool, name, args, workdir, access, approval)
+        permissions::execute(tool, name, args, runtime, access, approval)
     }
 
     #[cfg(test)]
     pub fn execute(&self, workdir: &Path, name: &str, args: &Value) -> Result<String, String> {
         self.call(
-            workdir,
+            &Runtime::new(workdir).map_err(|e| e.to_string())?,
             name,
             args,
             Access::Auto,
@@ -101,14 +106,19 @@ macro_rules! tool {
             fn name(&self) -> &'static str {
                 $name
             }
-            fn run(&self, workdir: &Path, args: &Value) -> Result<String, String> {
-                ($run)(workdir, args)
+            fn run(&self, runtime: &Runtime, args: &Value) -> Result<String, String> {
+                ($run)(runtime, args)
             }
         }
     };
 }
 
-tool!(ReadFile, READ_FILE, Action::Read, read_file);
+tool!(
+    ReadFile,
+    READ_FILE,
+    Action::Read,
+    |runtime: &Runtime, args| runtime.reader.read(runtime, args)
+);
 tool!(WriteFile, WRITE_FILE, Action::Write, write_file);
 tool!(SearchReplace, SEARCH_REPLACE, Action::Write, search_replace);
 tool!(Bash, BASH, Action::Execute, bash);
@@ -144,6 +154,9 @@ pub fn category(name: &str) -> ToolCategory {
 }
 
 fn definition(name: &str) -> Option<Value> {
+    if name == READ_FILE {
+        return Some(crate::read_file::definition());
+    }
     if matches!(name, GLOB | GREP) {
         return search::definition(name);
     }
@@ -152,10 +165,6 @@ fn definition(name: &str) -> Option<Value> {
         "Path of the file, relative to the working directory.",
     );
     let (description, params): (&str, &[(&str, &str)]) = match name {
-        READ_FILE => (
-            "Read a UTF-8 text file in the working directory and return its full contents.",
-            &[PATH],
-        ),
         BASH => (
             "Run a bash command in the working directory. Returns `exit=<code>` on the first \
              line, then stdout, then stderr. Each call runs in a new shell, so `cd` and \
@@ -206,21 +215,6 @@ fn definition(name: &str) -> Option<Value> {
     }))
 }
 
-/// Reads a file inside `workdir`. Paths that resolve outside it are refused, so the model
-/// cannot send files from elsewhere on the machine to the API.
-fn read_file(workdir: &Path, args: &Value) -> Result<String, String> {
-    let path = args
-        .get("path")
-        .and_then(Value::as_str)
-        .ok_or("missing string argument: path")?;
-    let root = fs::canonicalize(workdir).map_err(|e| format!("working directory: {e}"))?;
-    let target = fs::canonicalize(root.join(path)).map_err(|e| format!("{path}: {e}"))?;
-    if !target.starts_with(&root) {
-        return Err(format!("{path}: outside the working directory"));
-    }
-    fs::read_to_string(&target).map_err(|e| format!("{path}: {e}"))
-}
-
 /// Reads a string argument, or explains which one is missing.
 fn string_arg<'a>(args: &'a Value, name: &str) -> Result<&'a str, String> {
     args.get(name)
@@ -228,65 +222,58 @@ fn string_arg<'a>(args: &'a Value, name: &str) -> Result<&'a str, String> {
         .ok_or_else(|| format!("missing string argument: {name}"))
 }
 
-/// Resolves `path` to a file inside `workdir` that may not exist yet: the parent directory
-/// must exist, and the result (following a symlink if the file exists) must stay inside.
-fn writable_target(workdir: &Path, path: &str) -> Result<PathBuf, String> {
-    let root = fs::canonicalize(workdir).map_err(|e| format!("working directory: {e}"))?;
-    let joined = root.join(path);
-    let (Some(parent), Some(name)) = (joined.parent(), joined.file_name()) else {
-        return Err(format!("{path}: not a file path"));
-    };
-    let parent = fs::canonicalize(parent).map_err(|e| format!("{path}: {e}"))?;
-    let target = parent.join(name);
-    let resolved = fs::canonicalize(&target).unwrap_or_else(|_| target.clone());
-    if !resolved.starts_with(&root) {
-        return Err(format!("{path}: outside the working directory"));
-    }
-    Ok(target)
-}
-
 /// Writes `content` to a file inside `workdir`, creating or overwriting it.
-fn write_file(workdir: &Path, args: &Value) -> Result<String, String> {
+fn write_file(runtime: &Runtime, args: &Value) -> Result<String, String> {
     let path = string_arg(args, "path")?;
     let content = string_arg(args, "content")?;
-    let target = writable_target(workdir, path)?;
-    fs::write(&target, content).map_err(|e| format!("{path}: {e}"))?;
+    let mut file = runtime
+        .edit_open(Path::new(path), true)
+        .map_err(|e| format!("{path}: {e}"))?;
+    file.set_len(0)
+        .and_then(|()| file.write_all(content.as_bytes()))
+        .map_err(|e| format!("{path}: {e}"))?;
     Ok(format!("wrote {} bytes to {path}", content.len()))
 }
 
 /// Replaces `search` with `replace` in a file inside `workdir` only when `search` occurs
 /// exactly once (paper §16.10, Listing 3). Otherwise the file is left as it was.
-fn search_replace(workdir: &Path, args: &Value) -> Result<String, String> {
+fn search_replace(runtime: &Runtime, args: &Value) -> Result<String, String> {
     let path = string_arg(args, "path")?;
     let search = string_arg(args, "search")?;
     let replace = string_arg(args, "replace")?;
     if search.is_empty() {
         return Err("search must not be empty".to_string());
     }
-    let target = writable_target(workdir, path)?;
-    let text = fs::read_to_string(&target).map_err(|e| format!("{path}: {e}"))?;
+    let mut file = runtime
+        .edit_open(Path::new(path), false)
+        .map_err(|e| format!("{path}: {e}"))?;
+    let mut text = String::new();
+    file.read_to_string(&mut text)
+        .map_err(|e| format!("{path}: {e}"))?;
     let count = text.matches(search).count();
     if count != 1 {
         return Err(format!(
             "search string occurs {count}x in {path}; must be unique"
         ));
     }
-    fs::write(&target, text.replacen(search, replace, 1)).map_err(|e| format!("{path}: {e}"))?;
+    let changed = text.replacen(search, replace, 1);
+    file.seek(SeekFrom::Start(0))
+        .and_then(|_| file.write_all(changed.as_bytes()))
+        .and_then(|()| file.set_len(changed.len() as u64))
+        .map_err(|e| format!("{path}: {e}"))?;
     Ok(format!("replaced 1 occurrence in {path}"))
 }
 
 /// Runs a shell command with `bash -c` in `workdir` and returns `exit=<code>` followed by
 /// stdout and then stderr. stdin is closed, so a command that waits for input ends at once.
 /// A non-zero exit is returned as `Err` so the run record marks the call as failed.
-fn bash(workdir: &Path, args: &Value) -> Result<String, String> {
+fn bash(runtime: &Runtime, args: &Value) -> Result<String, String> {
     let command = args
         .get("command")
         .and_then(Value::as_str)
         .ok_or("missing string argument: command")?;
-    let output = Command::new("bash")
-        .args(["-c", command])
-        .current_dir(workdir)
-        .stdin(Stdio::null())
+    let output = crate::sandbox::command(runtime, "/bin/bash")?
+        .args(["--noprofile", "--norc", "-c", command])
         .output()
         .map_err(|e| format!("could not start bash: {e}"))?;
     let code = output
@@ -318,6 +305,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn all_builtins_follow_access_levels_without_changing_files_before_approval() {
         use crate::permissions::{Approval, Input, Response};
         struct CheckFile {
@@ -352,7 +340,13 @@ mod tests {
                         response,
                         asked: 0,
                     };
-                    let out = tools.call(&dir, name, &args, access, &mut approval);
+                    let out = tools.call(
+                        &Runtime::new(&dir).unwrap(),
+                        name,
+                        &args,
+                        access,
+                        &mut approval,
+                    );
                     let allowed = access == Access::Auto
                         || (access == Access::Confirm && response == Response::Approved);
                     assert_eq!(
@@ -367,7 +361,7 @@ mod tests {
                         if allowed { "done\n" } else { "pending\n" }
                     );
                     let read = tools.call(
-                        &dir,
+                        &Runtime::new(&dir).unwrap(),
                         READ_FILE,
                         &json!({"path":"status.txt"}),
                         access,
@@ -427,6 +421,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn bash_runs_in_workdir_and_reports_exit_code() {
         let dir = workdir("bash-ok");
         let out = with_bash().execute(&dir, BASH, &json!({ "command": "cat hello.txt" }));
@@ -434,6 +429,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn bash_failure_is_err_with_exit_code_and_stderr() {
         let dir = workdir("bash-fail");
         let out = with_bash().execute(&dir, BASH, &json!({ "command": "cat missing.txt" }));
@@ -443,6 +439,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn bash_does_not_wait_for_input() {
         let dir = workdir("bash-stdin");
         let out = with_bash().execute(&dir, BASH, &json!({ "command": "cat" }));

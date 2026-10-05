@@ -185,10 +185,11 @@ pub fn execute(
     spec: &RunSpec,
     hel: Option<&HelBinary>,
 ) -> Result<Record, Box<dyn Error>> {
-    let workdir = std::env::temp_dir().join("hel-lab").join(&spec.run_id);
+    let fixture_dir = std::env::temp_dir().join("hel-lab").join(&spec.run_id);
     reset_dir(&spec.run_dir)?;
-    reset_dir(&workdir)?;
-    copy_dir(&spec.fixture, &workdir)?;
+    reset_dir(&fixture_dir)?;
+    copy_dir(&spec.fixture, &fixture_dir)?;
+    let workdir = fixture_workdir(&fixture_dir, &spec.task.fixture_workdir)?;
     fs::create_dir_all(spec.run_dir.join("raw"))?;
 
     let sidecar = RunSidecar {
@@ -245,11 +246,31 @@ pub fn execute(
     let workspace = spec.run_dir.join("workspace");
     fs::create_dir_all(&workspace)?;
     copy_dir(&job.workdir, &workspace)?;
+    // The full fixture also preserves test files outside the harness working directory.
+    let fixture_snapshot = spec.run_dir.join("fixture");
+    fs::create_dir_all(&fixture_snapshot)?;
+    copy_dir(&fixture_dir, &fixture_snapshot)?;
     fs::write(
         spec.run_dir.join("record.json"),
         serde_json::to_string_pretty(&record)? + "\n",
     )?;
     Ok(record)
+}
+
+fn fixture_workdir(root: &Path, relative: &Path) -> Result<PathBuf, Box<dyn Error>> {
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err("fixture_workdir must stay within the copied fixture".into());
+    }
+    let root = root.canonicalize()?;
+    let workdir = root.join(relative).canonicalize()?;
+    if !workdir.is_dir() || !workdir.starts_with(&root) {
+        return Err("fixture_workdir must be a directory within the copied fixture".into());
+    }
+    Ok(workdir)
 }
 
 /// `installed: <path>` or `built: target/debug/hel`, with the home directory shortened.
@@ -426,6 +447,52 @@ fn copy_dir(from: &Path, to: &Path) -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nested_fixture_keeps_protected_files_outside_workdir() {
+        let root = std::env::temp_dir().join(format!("evals-fixture-{}", uuid::Uuid::new_v4()));
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../evals/tasks/sandbox-outside-01/fixture");
+        fs::create_dir_all(&root).unwrap();
+        copy_dir(&source, &root).unwrap();
+        let workdir = fixture_workdir(&root, Path::new("workspace")).unwrap();
+        assert!(
+            !root
+                .join("protected")
+                .canonicalize()
+                .unwrap()
+                .starts_with(&workdir)
+        );
+        let output = Command::new("/bin/sh")
+            .arg("probe.sh")
+            .current_dir(&workdir)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert_eq!(output.stdout, b"read=allowed\nwrite=allowed\n");
+        assert_eq!(
+            fs::read(root.join("protected/write.txt")).unwrap(),
+            b"changed\n"
+        );
+        assert_eq!(
+            fs::read(source.join("protected/write.txt")).unwrap(),
+            b"unchanged\n"
+        );
+        assert_eq!(
+            fixture_workdir(&root, Path::new(".")).unwrap(),
+            root.canonicalize().unwrap()
+        );
+        for invalid in [
+            Path::new(".."),
+            Path::new("/"),
+            Path::new("protected/read.txt"),
+        ] {
+            assert!(fixture_workdir(&root, invalid).is_err());
+        }
+        std::os::unix::fs::symlink(root.parent().unwrap(), root.join("escape")).unwrap();
+        assert!(fixture_workdir(&root, Path::new("escape")).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn reads_the_api_key_from_dotenv_text() {

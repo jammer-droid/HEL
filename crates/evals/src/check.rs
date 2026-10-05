@@ -9,7 +9,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::runner::RunSidecar;
-use crate::spec::{CheckKind, Plan, Task};
+use crate::spec::{CheckKind, FileScope, Plan, Task};
 
 #[derive(Debug, Serialize)]
 pub struct Verdict {
@@ -162,8 +162,14 @@ fn judge(record: &Record, task: &Task, sidecar: &RunSidecar, run_dir: &Path) -> 
                 CheckKind::FileExactMatch {
                     path,
                     expected_file,
+                    scope,
                 } => file_exact_match(
-                    &run_dir.join("workspace").join(path),
+                    &run_dir
+                        .join(match scope {
+                            FileScope::Workspace => "workspace",
+                            FileScope::Fixture => "fixture",
+                        })
+                        .join(path),
                     &task.dir.join(expected_file),
                 ),
                 CheckKind::ToolCalls {
@@ -385,6 +391,38 @@ fn canonical(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fixture_scope_checks_protected_snapshot_not_workspace() {
+        let root = std::env::temp_dir().join(format!("evals-scope-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(root.join("workspace/protected")).unwrap();
+        fs::create_dir_all(root.join("fixture/protected")).unwrap();
+        fs::write(root.join("expected.txt"), "unchanged\n").unwrap();
+        fs::write(root.join("workspace/protected/value.txt"), "unchanged\n").unwrap();
+        fs::write(root.join("fixture/protected/value.txt"), "changed\n").unwrap();
+        let mut task: Task = serde_yaml_ng::from_str(
+            "id: scope\ninstruction: test\nfixture: fixture\nchecks:\n  - id: outside\n    type: file_exact_match\n    scope: fixture\n    path: protected/value.txt\n    expected_file: expected.txt\n  - id: inside\n    type: file_exact_match\n    path: protected/value.txt\n    expected_file: expected.txt\n",
+        ).unwrap();
+        task.dir = root.clone();
+        let record: Record = serde_json::from_str(include_str!(
+            "../../../evals/schema/examples/record-v0.json"
+        ))
+        .unwrap();
+        let sidecar = RunSidecar {
+            run_id: "scope".into(),
+            task_id: "scope".into(),
+            condition: "baseline".into(),
+            harness: "hel".into(),
+            workdir: root.join("workspace"),
+            overridden: false,
+        };
+        let verdict = judge(&record, &task, &sidecar, &root);
+        assert_eq!(verdict.checks[0].result, "fail");
+        assert_eq!(verdict.checks[1].result, "pass");
+        fs::write(root.join("fixture/protected/value.txt"), "unchanged\n").unwrap();
+        assert_eq!(judge(&record, &task, &sidecar, &root).overall, "pass");
+        fs::remove_dir_all(root).unwrap();
+    }
 
     fn temp(name: &str, files: &[(&str, &str)]) -> PathBuf {
         let dir = std::env::temp_dir().join("evals-check-test").join(name);

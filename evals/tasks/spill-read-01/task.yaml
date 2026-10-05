@@ -1,0 +1,24 @@
+id: spill-read-01
+eval_version: eval-v7
+description: spill 원문을 read_file로 다시 읽어 처음 응답에서 생략된 중간 값 복원
+instruction: >
+  First use bash to run exactly /bin/sh emit.sh once. The output is long and the
+  harness will provide a path to the stored full result. Use read_file on that
+  returned path to read the area around line 1500 and find TARGET.
+  If a continuation cursor is returned, you may use it to continue reading.
+  Do not inspect emit.sh, rerun the command, or use bash to read the stored result.
+  Return only the value of TARGET, without explanation or code fences.
+  If read_file cannot access it, report that failure and stop.
+fixture: fixture/
+checks:
+  - id: output-exact
+    type: output_exact_match
+    expected_file: expected/output.txt
+  - id: generator-preserved
+    type: file_exact_match
+    path: emit.sh
+    expected_file: fixture/emit.sh
+  - id: generator-once
+    type: tool_calls
+    category: exec
+    count: 1

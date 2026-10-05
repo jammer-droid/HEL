@@ -28,6 +28,9 @@ mod context;
 mod output;
 mod permissions;
 mod prompt;
+mod read_file;
+mod runtime;
+mod sandbox;
 mod search;
 mod tools;
 
@@ -95,12 +98,6 @@ fn main() -> ExitCode {
 
 fn run() -> Result<(), Box<dyn Error>> {
     let args = parse_args(env::args().skip(1))?;
-    // Spilled tool results from earlier runs are kept for a day, then removed here.
-    context::clean_spills(
-        &context::spill_root(),
-        context::SPILL_RETENTION,
-        SystemTime::now(),
-    );
     let ctx = match &args.context {
         Some(path) => serde_json::from_str(&fs::read_to_string(path)?)?,
         None => manual_context(),
@@ -114,6 +111,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         Duration::from_secs(ctx.budget.timeout_seconds),
     )?;
     let workdir = env::current_dir()?;
+    let runtime = runtime::Runtime::new(&workdir)?;
     let mut approval = permissions::Input::new(args.approval_input.as_deref())?;
     let system = prompt::system_message(args.env, args.context_file.as_deref(), &workdir);
     let compaction = args.compaction.policy(ctx.budget.max_output_tokens);
@@ -123,7 +121,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         (None, None) => {
             return chat(
                 &client,
-                &workdir,
+                &runtime,
                 &args.tools,
                 system,
                 ctx.budget.max_turns,
@@ -151,7 +149,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         run_loop(
             &mut Session {
                 client: &client,
-                workdir: &workdir,
+                runtime: &runtime,
                 tools: &args.tools,
                 compaction: compaction.as_ref(),
                 access: args.access,
@@ -190,7 +188,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 #[allow(clippy::too_many_arguments)]
 fn chat(
     client: &api::Client,
-    workdir: &Path,
+    runtime: &runtime::Runtime,
     tools: &Toolset,
     system: Option<Value>,
     max_turns: u32,
@@ -203,7 +201,7 @@ fn chat(
     let mut meter = context::Meter::default();
     let mut session = Session {
         client,
-        workdir,
+        runtime,
         tools,
         compaction,
         access,
@@ -258,7 +256,7 @@ fn chat(
 /// What one model ↔ tool loop needs besides the conversation.
 struct Session<'a> {
     client: &'a api::Client,
-    workdir: &'a Path,
+    runtime: &'a runtime::Runtime,
     tools: &'a Toolset,
     compaction: Option<&'a context::Policy>,
     access: Access,
@@ -274,7 +272,7 @@ fn run_loop(
 ) {
     let Session {
         client,
-        workdir,
+        runtime,
         tools,
         compaction,
         access,
@@ -332,7 +330,7 @@ fn run_loop(
                 .as_str()
                 .and_then(|raw| serde_json::from_str(raw).ok())
                 .unwrap_or_else(|| json!({}));
-            let execution = tools.call(workdir, name, &args, *access, *approval);
+            let execution = tools.call(runtime, name, &args, *access, *approval);
             log.permissions.push(execution.trace);
             let result = execution.result;
             log.events.push(ToolEvent {
@@ -344,7 +342,7 @@ fn run_loop(
             });
             let mut content = result.unwrap_or_else(|err| format!("error: {err}"));
             if compaction.is_some() {
-                content = context::spill(content, name);
+                content = context::spill(runtime, content);
             }
             messages.push(json!({ "role": "tool", "tool_call_id": id, "content": content }));
         }

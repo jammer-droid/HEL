@@ -71,6 +71,9 @@ pub struct Task {
     #[serde(default)]
     pub turns: Vec<String>,
     pub fixture: PathBuf,
+    /// Working directory within the copied fixture; siblings can be protected test data.
+    #[serde(default = "fixture_root")]
+    pub fixture_workdir: PathBuf,
     pub checks: Vec<Check>,
     /// Directory of task.yaml; relative paths in the spec resolve against it.
     #[serde(skip)]
@@ -96,6 +99,8 @@ pub enum CheckKind {
         /// File in the working directory after the run (relative to it).
         path: PathBuf,
         expected_file: PathBuf,
+        #[serde(default)]
+        scope: FileScope,
     },
     ToolCalls {
         category: ToolCategory,
@@ -109,6 +114,18 @@ pub enum CheckKind {
         key: String,
         value: String,
     },
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileScope {
+    #[default]
+    Workspace,
+    Fixture,
+}
+
+fn fixture_root() -> PathBuf {
+    PathBuf::from(".")
 }
 
 fn empty_object() -> Value {

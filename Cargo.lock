@@ -473,10 +473,12 @@ name = "hel"
 version = "0.1.0"
 dependencies = [
  "humantime",
+ "libc",
  "record",
  "reqwest",
  "serde",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]

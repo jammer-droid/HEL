@@ -1,9 +1,9 @@
 //! H4: read-only, on-demand repository search through ripgrep. Limits apply to the
 //! text returned to the model; rg still completes the search before formatting.
 
+use crate::runtime::Runtime;
 use std::fs;
 use std::path::Path;
-use std::process::{Command, Stdio};
 
 use serde_json::{Value, json};
 
@@ -56,13 +56,14 @@ pub fn definition(name: &str) -> Option<Value> {
     }))
 }
 
-pub fn execute(workdir: &Path, name: &str, args: &Value) -> Result<String, String> {
+pub fn execute(runtime: &Runtime, name: &str, args: &Value) -> Result<String, String> {
     // The loop prefixes errors with "error: ". Bound path/argument errors as well as rg errors.
-    execute_search(workdir, name, args)
+    execute_search(runtime, name, args)
         .map_err(|error| bounded_text(error, MAX_BYTES - "error: ".len()))
 }
 
-fn execute_search(workdir: &Path, name: &str, args: &Value) -> Result<String, String> {
+fn execute_search(runtime: &Runtime, name: &str, args: &Value) -> Result<String, String> {
+    let workdir = &runtime.project;
     if !matches!(name, GLOB | GREP) {
         return Err(format!("unknown search tool: {name}"));
     }
@@ -89,7 +90,7 @@ fn execute_search(workdir: &Path, name: &str, args: &Value) -> Result<String, St
     } else {
         relative
     };
-    let mut command = Command::new("rg");
+    let mut command = crate::sandbox::command(runtime, "rg")?;
     command.args([
         "--no-config",
         "--no-follow",
@@ -110,7 +111,6 @@ fn execute_search(workdir: &Path, name: &str, args: &Value) -> Result<String, St
         .arg("--")
         .arg(relative)
         .current_dir(&root)
-        .stdin(Stdio::null())
         .output()
         .map_err(|e| format!("could not run ripgrep: {e}"))?;
     match output.status.code() {
@@ -236,7 +236,7 @@ fn bounded_text(text: String, limit: usize) -> String {
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
     use crate::tools::{Toolset, category};

@@ -6,6 +6,7 @@ use std::fs;
 use std::io::{self, IsTerminal, Write};
 use std::path::Path;
 
+use crate::runtime::Runtime;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -55,7 +56,7 @@ pub trait Approvable {
 /// The gate is the only production caller of tool execution.
 pub trait Tool: Approvable {
     fn name(&self) -> &'static str;
-    fn run(&self, workdir: &Path, args: &Value) -> Result<String, String>;
+    fn run(&self, runtime: &Runtime, args: &Value) -> Result<String, String>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -149,7 +150,7 @@ pub fn execute(
     tool: Option<&dyn Tool>,
     name: &str,
     args: &Value,
-    workdir: &Path,
+    runtime: &Runtime,
     access: Access,
     approval: &mut dyn Approval,
 ) -> Execution {
@@ -182,7 +183,7 @@ pub fn execute(
     };
     let result = if allowed {
         trace.executed = true;
-        tool.run(workdir, args)
+        tool.run(runtime, args)
     } else {
         Err(format!(
             "permission denied: {name} (access={access:?}, approval={:?})",
@@ -210,7 +211,7 @@ mod tests {
         fn name(&self) -> &'static str {
             "new-tool"
         }
-        fn run(&self, _: &Path, _: &Value) -> Result<String, String> {
+        fn run(&self, _: &Runtime, _: &Value) -> Result<String, String> {
             self.calls.set(self.calls.get() + 1);
             Ok("done".into())
         }
@@ -242,7 +243,7 @@ mod tests {
                 Some(&tool),
                 tool.name(),
                 &json!({}),
-                Path::new("."),
+                &Runtime::new(Path::new(".")).unwrap(),
                 Access::Confirm,
                 &mut approval,
             );
@@ -267,7 +268,7 @@ mod tests {
                 Some(&tool),
                 tool.name(),
                 &json!({}),
-                Path::new("."),
+                &Runtime::new(Path::new(".")).unwrap(),
                 access,
                 &mut approval,
             );
@@ -287,7 +288,7 @@ mod tests {
                 Some(&tool),
                 tool.name(),
                 &json!({}),
-                Path::new("."),
+                &Runtime::new(Path::new(".")).unwrap(),
                 Access::Confirm,
                 &mut input,
             );
@@ -320,7 +321,7 @@ mod tests {
             None,
             "unknown",
             &json!({}),
-            Path::new("."),
+            &Runtime::new(Path::new(".")).unwrap(),
             Access::Auto,
             &mut input,
         );

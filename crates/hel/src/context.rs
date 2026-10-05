@@ -8,15 +8,6 @@
 //! results are pruned first; if that is not enough, the oldest span after the system message is
 //! sent to the model for a summary and replaced by it, keeping a recent tail verbatim.
 
-use std::collections::hash_map::RandomState;
-use std::fs;
-use std::hash::{BuildHasher, Hasher};
-use std::io::{self, Write};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::{Duration, SystemTime};
-
 use serde_json::{Value, json};
 
 use crate::api::{ApiError, Exchange};
@@ -282,99 +273,20 @@ pub fn before_request(
     );
 }
 
-/// Spilled tool results older than this are deleted when hel starts.
-pub const SPILL_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
-
-static SPILLS: AtomicU32 = AtomicU32::new(0);
-
-/// `<temp dir>/hel-spill`, shared by all runs so a later start can clean up old files.
-pub fn spill_root() -> PathBuf {
-    std::env::temp_dir().join("hel-spill")
-}
-
-/// Makes `root` a directory only the current user can open (0700). Refuses a symlink or a
-/// non-directory; setting the mode fails when the directory belongs to someone else.
-fn private_dir(root: &Path) -> io::Result<()> {
-    match fs::symlink_metadata(root) {
-        Ok(meta) if meta.file_type().is_symlink() || !meta.is_dir() => {
-            return Err(io::Error::other("spill root is not a plain directory"));
-        }
-        Ok(_) => {}
-        Err(err) if err.kind() == io::ErrorKind::NotFound => {
-            fs::DirBuilder::new().mode(0o700).create(root)?;
-        }
-        Err(err) => return Err(err),
-    }
-    fs::set_permissions(root, fs::Permissions::from_mode(0o700))
-}
-
-/// A file name others cannot guess: a randomly seeded hash of time, process and a counter.
-fn unpredictable_name(tool: &str) -> String {
-    let mut hasher = RandomState::new().build_hasher();
-    let nanos = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map_or(0, |d| d.as_nanos());
-    hasher.write_u128(nanos);
-    hasher.write_u32(std::process::id());
-    hasher.write_u32(SPILLS.fetch_add(1, Ordering::Relaxed));
-    format!("{:016x}-{tool}.txt", hasher.finish())
-}
-
-/// Tool results over `SPILL_TOKENS` are written to a file; the model gets head, tail and the path.
-pub fn spill(content: String, tool: &str) -> String {
-    spill_in(&spill_root(), content, tool)
-}
-
-fn spill_in(root: &Path, content: String, tool: &str) -> String {
+/// Tool results above SPILL_TOKENS are stored by the current run's trusted owner.
+pub fn spill(runtime: &crate::runtime::Runtime, content: String) -> String {
     if estimate(&[json!(content)]) <= SPILL_TOKENS {
         return content;
     }
-    let path = root.join(unpredictable_name(tool));
-    let saved = private_dir(root).and_then(|()| {
-        // create_new never follows or replaces an existing file; 0600 keeps it private.
-        fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&path)?
-            .write_all(content.as_bytes())
-    });
-    if saved.is_err() {
-        // Keeping the original visible is safer than losing it.
+    let Ok(path) = runtime.save_spill(content.as_bytes()) else {
         return content;
-    }
+    };
     let omitted = content.len();
     let notice = format!(
-        "\n\n[... Omitted {omitted} bytes. Full result stored at: {}. Use bash with sed -n or \
-         grep on this path to read parts of it. ...]\n\n",
+        "\n\n[... Omitted {omitted} bytes. Full result stored at: {}. Use read_file with start_line/max_lines or its continuation cursor to read parts of it. ...]\n\n",
         path.display()
     );
     head_and_tail(&content, &notice)
-}
-
-/// Deletes spilled files last modified more than `retention` before `now`. Runs once when hel
-/// starts; a missing or symlinked root is left alone. Returns how many files were removed.
-pub fn clean_spills(root: &Path, retention: Duration, now: SystemTime) -> usize {
-    let Ok(meta) = fs::symlink_metadata(root) else {
-        return 0;
-    };
-    if meta.file_type().is_symlink() || !meta.is_dir() {
-        return 0;
-    }
-    let Some(cutoff) = now.checked_sub(retention) else {
-        return 0;
-    };
-    let Ok(entries) = fs::read_dir(root) else {
-        return 0;
-    };
-    entries
-        .filter_map(Result::ok)
-        .filter(|entry| {
-            fs::symlink_metadata(entry.path())
-                .is_ok_and(|m| m.is_file() && m.modified().is_ok_and(|modified| modified < cutoff))
-        })
-        .filter(|entry| fs::remove_file(entry.path()).is_ok())
-        .count()
 }
 
 #[cfg(test)]
@@ -571,83 +483,34 @@ mod tests {
         assert_eq!(messages, original, "a tool-calling summary is not used");
     }
 
-    fn temp_root(name: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!("hel-test-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        root
-    }
-
-    fn stored_path(shown: &str) -> PathBuf {
-        PathBuf::from(
-            shown
-                .split("Full result stored at: ")
-                .nth(1)
-                .and_then(|rest| rest.split(". Use bash").next())
-                .unwrap(),
-        )
-    }
-
     #[test]
-    fn spills_large_results_to_a_private_file() {
-        let root = temp_root("spill");
-        assert_eq!(spill_in(&root, "small".to_string(), "bash"), "small");
-
+    fn spills_large_results_to_the_current_runs_private_file() {
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+        let temp = std::env::temp_dir().join(format!("hel-spill-test-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&temp).unwrap();
+        let runtime = crate::runtime::Runtime::new_in(&temp, &temp.join("runs")).unwrap();
+        assert_eq!(spill(&runtime, "small".into()), "small");
         let big = format!("start{}end", "z".repeat(60_000));
-        let shown = spill_in(&root, big.clone(), "bash");
+        let shown = spill(&runtime, big.clone());
         assert!(shown.starts_with("start") && shown.ends_with("end"));
-        let path = stored_path(&shown);
-        assert_eq!(path.parent(), Some(root.as_path()));
-        assert_eq!(fs::read_to_string(&path).unwrap(), big);
-        let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode(&root), 0o700);
-        assert_eq!(mode(&path), 0o600);
-
-        let again = stored_path(&spill_in(&root, big, "bash"));
-        assert_ne!(
-            again, path,
-            "names are not reused or guessable from a counter alone"
-        );
-        fs::remove_dir_all(&root).unwrap();
-    }
-
-    #[test]
-    fn refuses_a_symlinked_spill_root() {
-        let root = temp_root("spill-link");
-        let target = temp_root("spill-target");
-        fs::create_dir_all(&target).unwrap();
-        std::os::unix::fs::symlink(&target, &root).unwrap();
-
-        let big = "y".repeat(60_000);
-        assert_eq!(spill_in(&root, big.clone(), "bash"), big, "kept inline");
-        assert_eq!(fs::read_dir(&target).unwrap().count(), 0);
-        assert_eq!(clean_spills(&root, SPILL_RETENTION, SystemTime::now()), 0);
-        fs::remove_file(&root).unwrap();
-        fs::remove_dir_all(&target).unwrap();
-    }
-
-    #[test]
-    fn cleans_only_files_older_than_the_retention() {
-        let root = temp_root("clean");
-        fs::create_dir_all(&root).unwrap();
-        let old = root.join("old-bash.txt");
-        let fresh = root.join("fresh-bash.txt");
-        fs::write(&old, "old").unwrap();
-        fs::write(&fresh, "fresh").unwrap();
-        let two_days_ago = SystemTime::now() - Duration::from_secs(2 * 24 * 60 * 60);
-        fs::File::options()
-            .write(true)
-            .open(&old)
+        let file = fs::read_dir(&runtime.spill)
             .unwrap()
-            .set_modified(two_days_ago)
-            .unwrap();
-
-        assert_eq!(clean_spills(&root, SPILL_RETENTION, SystemTime::now()), 1);
-        assert!(!old.exists());
-        assert!(fresh.exists());
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        assert_eq!(fs::read_to_string(&file).unwrap(), big);
         assert_eq!(
-            clean_spills(&temp_root("missing"), SPILL_RETENTION, SystemTime::now()),
-            0
+            fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+            0o600
         );
-        fs::remove_dir_all(&root).unwrap();
+        assert_eq!(
+            fs::metadata(&runtime.spill).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert!(shown.contains(file.to_str().unwrap()));
+        drop(runtime);
+        fs::remove_dir_all(temp).unwrap();
     }
 }
