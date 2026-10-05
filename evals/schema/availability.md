@@ -22,3 +22,8 @@
 
 - claude-code 열은 Claude Code 2.1.288 기준이다. 추출은 `crates/evals/src/claude_code.rs`의 collector와 적합성 test가 담당한다.
 - `derived` 값이 생기면 계산 방법을 여기에 적는다.
+
+
+## H9 재시작 run collector (eval-v8)
+
+hel의 각 stage record는 위 표와 같다. run 전체를 합칠 때 input/output/cached token·model_calls는 stage 합(derived), peak_context는 stage 최댓값(derived), last_context는 마지막 stage 값, wall_time은 전체 프로세스 경과시간(measured)이다. 필요한 stage 값이 unavailable이면 합계·최댓값도 unavailable이다. 원본 stage record는 보존하며, 단일 프로세스의 기존 수집은 바꾸지 않는다.

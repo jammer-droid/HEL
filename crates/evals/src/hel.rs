@@ -242,6 +242,17 @@ fn prepare_ripgrep(source: &Path, run_dir: &Path) -> Result<OsString, Box<dyn Er
 }
 
 pub fn run(job: &RunJob) -> Result<Record, Box<dyn Error>> {
+    if job.condition.settings.get("session_mode").is_some() {
+        return crate::session::run(job);
+    }
+    run_process(job, &[], None)
+}
+
+pub(crate) fn run_process(
+    job: &RunJob,
+    extra_args: &[String],
+    limit: Option<Duration>,
+) -> Result<Record, Box<dyn Error>> {
     // Fail before spawning hel (and making model calls) if the requested engine is unavailable.
     let path = run_path(&job.condition.settings, &job.run_dir)?;
     let context_path = job.run_dir.join("context.json");
@@ -281,6 +292,7 @@ pub fn run(job: &RunJob) -> Result<Record, Box<dyn Error>> {
     }
     command
         .args(args)
+        .args(extra_args)
         .arg("--context")
         .arg(&context_path)
         .arg("--record")
@@ -294,7 +306,10 @@ pub fn run(job: &RunJob) -> Result<Record, Box<dyn Error>> {
         .stderr(fs::File::create(job.run_dir.join("raw/stderr.txt"))?);
 
     let budget = Duration::from_secs(job.ctx.budget.timeout_seconds);
-    let finished = runner::run_with_timeout(command, budget)?;
+    let finished = match limit {
+        Some(limit) => runner::run_with_limit(command, limit)?,
+        None => runner::run_with_timeout(command, budget)?,
+    };
 
     if finished.timed_out {
         return Ok(runner::failure_record(
@@ -306,7 +321,20 @@ pub fn run(job: &RunJob) -> Result<Record, Box<dyn Error>> {
         ));
     }
     match fs::read_to_string(&record_path) {
-        Ok(text) => Ok(serde_json::from_str(&text)?),
+        Ok(text) => {
+            let mut record: Record = serde_json::from_str(&text)?;
+            if limit.is_some() && !finished.status.is_some_and(|status| status.success()) {
+                record.validity.valid = false;
+                record
+                    .validity
+                    .reasons
+                    .push("session process exited unsuccessfully".to_string());
+                record.outcome.termination = Termination::Error;
+                record.outcome.final_output = None;
+                record.outcome.error = Some("session process exited unsuccessfully".to_string());
+            }
+            Ok(record)
+        }
         Err(_) => {
             let stderr = fs::read_to_string(job.run_dir.join("raw/stderr.txt")).unwrap_or_default();
             Ok(runner::failure_record(

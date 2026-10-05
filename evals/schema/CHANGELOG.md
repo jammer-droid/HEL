@@ -1,5 +1,10 @@
 # Record Schema Changelog
 
+## record-v0 유지 (eval-v8, H9, 2026-10-05)
+
+- 프로세스 재시작 task도 두 지시를 합쳐 run 하나로 수집. 새 필드·필드 의미 변경 없음, schema 변경 없음. stage 원본을 보존하고 합계·최댓값은 derived, 전체 시간은 measured로 기록. 계산법은 availability.md. collector 적합성 test에서 기존 schema로 검증.
+- task의 recall_tokens·recall_token check 및 session_mode는 eval 명세 확장. 기존 Lab에는 적용하지 않으며 과거 record 재생성·재측정 불필요.
+
 ## record-v0 호환 확장 (H5, 2026-10-04)
 
 - `usage`에 선택 필드 `cached_input_tokens`, `peak_context_tokens`, `last_context_tokens`(metric)를 추가한다. H5에서 cache hit 비율과 호출 시점의 context 크기를 run 단위로 비교하고, H6 compaction 비교에 같은 값을 쓰기 위해서다.

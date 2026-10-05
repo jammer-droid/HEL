@@ -25,6 +25,7 @@ pub struct Runtime {
     project_dir: File,
     spill_dir: File,
     lease: Option<File>,
+    session_lease: Option<File>,
 }
 
 impl Runtime {
@@ -63,7 +64,30 @@ impl Runtime {
             project_dir,
             spill_dir,
             lease: Some(lease),
+            session_lease: None,
         })
+    }
+
+    /// tmp remains invocation-owned; the supplied spill and lease belong to the session.
+    pub fn for_session(project: &Path, spill: &Path, lease: File) -> io::Result<Self> {
+        let mut runtime = Self::new(project)?;
+        runtime.spill = spill.canonicalize()?;
+        runtime.spill_dir = open_directory(&runtime.spill)?;
+        runtime.session_lease = Some(lease);
+        Ok(runtime)
+    }
+
+    pub fn lease_fds(&self) -> Vec<RawFd> {
+        let mut fds = vec![self.lease_fd()];
+        if let Some(lease) = &self.session_lease {
+            fds.push(lease.as_raw_fd());
+        }
+        fds
+    }
+
+    /// .hel is reserved for harness state, including nested project stores.
+    pub fn protected(&self, path: &Path) -> bool {
+        path.starts_with(&self.store) || path.components().any(|c| c.as_os_str() == ".hel")
     }
 
     pub fn lease_fd(&self) -> RawFd {
@@ -79,12 +103,12 @@ impl Runtime {
         let target = self.project.join(path).canonicalize()?;
         let (root, dir) = if target.starts_with(&self.spill) {
             (&self.spill, &self.spill_dir)
-        } else if target.starts_with(&self.project) && !target.starts_with(&self.store) {
+        } else if target.starts_with(&self.project) && !self.protected(&target) {
             (&self.project, &self.project_dir)
         } else {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
-                "outside the working directory and current run spill",
+                "outside the working directory and current session spill",
             ));
         };
         let file = open_beneath(dir, target.strip_prefix(root).unwrap(), libc::O_RDONLY)?;
@@ -107,7 +131,7 @@ impl Runtime {
             Err(e) if e.kind() == io::ErrorKind::NotFound => unresolved,
             Err(e) => return Err(e),
         };
-        if !target.starts_with(&self.project) || target.starts_with(&self.store) {
+        if !target.starts_with(&self.project) || self.protected(&target) {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "outside the working directory or protected run storage",
@@ -151,7 +175,7 @@ fn regular_file(file: &File) -> io::Result<()> {
     }
 }
 
-fn open_directory(path: &Path) -> io::Result<File> {
+pub(crate) fn open_directory(path: &Path) -> io::Result<File> {
     OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
@@ -194,7 +218,7 @@ fn open_beneath(root: &File, relative: &Path, flags: i32) -> io::Result<File> {
     unreachable!()
 }
 
-fn private_dir(path: &Path) -> io::Result<()> {
+pub(crate) fn private_dir(path: &Path) -> io::Result<()> {
     match fs::symlink_metadata(path) {
         Ok(meta) => {
             // SAFETY: geteuid has no preconditions.
@@ -209,7 +233,11 @@ fn private_dir(path: &Path) -> io::Result<()> {
             fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            fs::DirBuilder::new().mode(0o700).create(path)?
+            match fs::DirBuilder::new().mode(0o700).create(path) {
+                Ok(()) => {}
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => return private_dir(path),
+                Err(e) => return Err(e),
+            }
         }
         Err(e) => return Err(e),
     }

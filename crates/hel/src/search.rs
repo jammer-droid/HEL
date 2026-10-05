@@ -72,7 +72,7 @@ fn execute_search(runtime: &Runtime, name: &str, args: &Value) -> Result<String,
     let include = optional_string(args, "include")?;
     let root = fs::canonicalize(workdir).map_err(|e| format!("working directory: {e}"))?;
     let target = fs::canonicalize(root.join(path)).map_err(|e| format!("{path}: {e}"))?;
-    if !target.starts_with(&root) {
+    if !target.starts_with(&root) || runtime.protected(&target) {
         return Err(format!("{path}: outside the working directory"));
     }
     if name == GLOB && !target.is_dir() {
@@ -107,6 +107,17 @@ fn execute_search(runtime: &Runtime, name: &str, args: &Value) -> Result<String,
             command.args(["--glob", include]);
         }
     }
+    // Last glob wins, so even an explicit user include cannot expose session storage.
+    command.args([
+        "--glob",
+        "!**/.hel",
+        "--glob",
+        "!.hel",
+        "--glob",
+        "!**/.hel/**",
+        "--glob",
+        "!.hel/**",
+    ]);
     let output = command
         .arg("--")
         .arg(relative)

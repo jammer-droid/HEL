@@ -13,6 +13,7 @@ mod claude_code;
 mod hel;
 mod report;
 mod runner;
+mod session;
 mod spec;
 mod try_run;
 

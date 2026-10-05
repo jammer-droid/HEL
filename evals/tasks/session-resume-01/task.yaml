@@ -1,0 +1,18 @@
+id: session-resume-01
+eval_version: eval-v8
+description: Remember an arbitrary identifier across a normal process exit and resume.
+turns:
+  - >-
+    Remember this session identifier for my next question: {{recall_token}}.
+    Reply with a brief acknowledgement. Do not use tools.
+  - >-
+    What session identifier did I give you earlier? Reply with that exact identifier.
+    If it is not in this conversation, say UNKNOWN. Do not use tools.
+recall_tokens:
+  - HEL-1a233a57004647a388dbbcfb1e316bb0
+  - HEL-141273f07b0c48ae9ae70bfaa8f0085a
+  - HEL-69671e1d24194121a8d3cbca320898cb
+fixture: fixture/
+checks:
+  - id: recall
+    type: recall_token

@@ -1,4 +1,4 @@
-//! Bounded UTF-8 reads with run-local continuation cursors. A cursor retains the selected
+//! Bounded UTF-8 reads with session-persisted continuation cursors. A cursor retains the selected
 //! range and file identity; it cannot be used to read another run's file or a changed file.
 
 use std::cell::RefCell;
@@ -16,12 +16,12 @@ pub const MAX_BYTES: usize = 10_000;
 const CONTENT_BYTES: usize = MAX_BYTES - 160;
 const MAX_CURSORS: usize = 128;
 
-#[derive(Default)]
+#[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Reader {
     cursors: RefCell<VecDeque<(String, Position)>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct Position {
     path: PathBuf,
     offset: u64,
@@ -29,7 +29,7 @@ struct Position {
     identity: Identity,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct Identity {
     device: u64,
     inode: u64,
@@ -55,7 +55,7 @@ pub fn definition() -> Value {
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read UTF-8 text from the project or this run's spill files. start_line is 1-based and max_lines selects a range; omit both to read from the beginning. Returns at most 10000 UTF-8 bytes including any continuation notice. If truncated, call again with only the returned cursor to read the rest of the selected range, including the remainder of a long line. Cursors belong to this run and become invalid if the file changes. Do not guess cursor values.",
+            "description": "Read UTF-8 text from the project or this session's spill files. start_line is 1-based and max_lines selects a range; omit both to read from the beginning. Returns at most 10000 UTF-8 bytes including any continuation notice. If truncated, call again with only the returned cursor to read the rest of the selected range, including the remainder of a long line. Cursors belong to this session and become invalid if the file changes. Do not guess cursor values.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -71,6 +71,25 @@ pub fn definition() -> Value {
 }
 
 impl Reader {
+    pub fn validate(&self) -> Result<(), String> {
+        let cursors = self.cursors.borrow();
+        if cursors.len() > MAX_CURSORS {
+            return Err("too many saved cursors".into());
+        }
+        let mut ids = std::collections::HashSet::new();
+        for (id, position) in cursors.iter() {
+            if uuid::Uuid::parse_str(id).is_err()
+                || !ids.insert(id)
+                || !position.path.is_absolute()
+                || position.offset > position.identity.length
+                || position.remaining_lines == Some(0)
+            {
+                return Err("invalid saved cursor".into());
+            }
+        }
+        Ok(())
+    }
+
     pub fn read(&self, runtime: &Runtime, args: &Value) -> Result<String, String> {
         let (mut position, file) = if let Some(cursor) = args.get("cursor") {
             let cursor = cursor.as_str().ok_or("cursor must be a string")?;

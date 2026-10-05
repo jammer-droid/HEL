@@ -107,6 +107,11 @@ pub fn run_all(
     tasks: &[Task],
     options: &Options,
 ) -> Result<(), Box<dyn Error>> {
+    for task in tasks {
+        if !task.recall_tokens.is_empty() && task.recall_tokens.len() < plan.repetitions as usize {
+            return Err(format!("{}: not enough recall tokens for repetitions", task.id).into());
+        }
+    }
     let api_key = api_key(root)?;
     let mut selected: Vec<&Condition> = Vec::new();
     for condition in &plan.conditions {
@@ -226,10 +231,11 @@ pub fn execute(
         },
         budget: plan.budget,
     };
+    let turns = materialize_turns(spec.task, spec.turns, spec.repetition)?;
     let job = RunJob {
         ctx,
         instruction: spec.instruction,
-        turns: spec.turns,
+        turns: &turns,
         hel,
         condition: spec.condition,
         run_dir: spec.run_dir.clone(),
@@ -255,6 +261,24 @@ pub fn execute(
         serde_json::to_string_pretty(&record)? + "\n",
     )?;
     Ok(record)
+}
+
+fn materialize_turns(
+    task: &Task,
+    turns: &[String],
+    repetition: u32,
+) -> Result<Vec<String>, Box<dyn Error>> {
+    if task.recall_tokens.is_empty() {
+        return Ok(turns.to_vec());
+    }
+    let token = repetition
+        .checked_sub(1)
+        .and_then(|i| task.recall_tokens.get(i as usize))
+        .ok_or("no recall token for this repetition")?;
+    Ok(turns
+        .iter()
+        .map(|turn| turn.replace("{{recall_token}}", token))
+        .collect())
 }
 
 fn fixture_workdir(root: &Path, relative: &Path) -> Result<PathBuf, Box<dyn Error>> {
@@ -306,14 +330,15 @@ pub struct Finished {
 }
 
 /// Spawns `command` and kills it if it runs longer than `budget + KILL_GRACE`.
-pub fn run_with_timeout(
-    mut command: Command,
-    budget: Duration,
-) -> Result<Finished, Box<dyn Error>> {
+pub fn run_with_timeout(command: Command, budget: Duration) -> Result<Finished, Box<dyn Error>> {
+    run_with_limit(command, budget + KILL_GRACE)
+}
+
+/// Strict outer limit for a whole multi-process session measurement (no grace per stage).
+pub fn run_with_limit(mut command: Command, limit: Duration) -> Result<Finished, Box<dyn Error>> {
     let started = SystemTime::now();
     let clock = Instant::now();
     let mut child: Child = command.spawn()?;
-    let limit = budget + KILL_GRACE;
     let status = loop {
         if let Some(status) = child.try_wait()? {
             break Some(status);

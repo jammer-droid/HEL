@@ -32,6 +32,7 @@ mod read_file;
 mod runtime;
 mod sandbox;
 mod search;
+mod sessions;
 mod tools;
 
 use std::env;
@@ -51,7 +52,14 @@ use output::RunLog;
 use permissions::{Access, Approval};
 use tools::Toolset;
 
+enum Management {
+    List,
+    Delete(String),
+}
+
 struct Args {
+    resume: Option<String>,
+    management: Option<Management>,
     instruction: Option<String>,
     turns_file: Option<PathBuf>,
     tools: Toolset,
@@ -97,7 +105,29 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<(), Box<dyn Error>> {
-    let args = parse_args(env::args().skip(1))?;
+    run_args(parse_args(env::args().skip(1))?)
+}
+
+fn run_args(args: Args) -> Result<(), Box<dyn Error>> {
+    let workdir = env::current_dir()?;
+    if let Some(command) = &args.management {
+        match command {
+            Management::List => {
+                let rows = sessions::list(&workdir)?;
+                if rows.is_empty() {
+                    println!("No sessions in this project.");
+                }
+                for row in rows {
+                    println!("{row}");
+                }
+            }
+            Management::Delete(id) => {
+                sessions::delete(&workdir, id)?;
+                println!("Deleted session {id}.");
+            }
+        }
+        return Ok(());
+    }
     let ctx = match &args.context {
         Some(path) => serde_json::from_str(&fs::read_to_string(path)?)?,
         None => manual_context(),
@@ -110,11 +140,30 @@ fn run() -> Result<(), Box<dyn Error>> {
         &ctx.model.params,
         Duration::from_secs(ctx.budget.timeout_seconds),
     )?;
-    let workdir = env::current_dir()?;
-    let runtime = runtime::Runtime::new(&workdir)?;
     let mut approval = permissions::Input::new(args.approval_input.as_deref())?;
     let system = prompt::system_message(args.env, args.context_file.as_deref(), &workdir);
     let compaction = args.compaction.policy(ctx.budget.max_output_tokens);
+    let config = sessions::RequestConfig {
+        model: ctx.model.clone(),
+        max_output_tokens: ctx.budget.max_output_tokens,
+        tools: args.tools.definitions().clone(),
+        compaction,
+    };
+    let store = sessions::Store::open(&workdir, args.resume.as_deref())?;
+    let restored = if args.resume.is_some() {
+        store.restore(system, &config)?
+    } else {
+        sessions::Restored {
+            messages: system.into_iter().collect(),
+            meter: context::Meter::default(),
+            reader: read_file::Reader::default(),
+        }
+    };
+    let mut runtime = store.runtime()?;
+    runtime.reader = restored.reader;
+    let mut messages = restored.messages;
+    let mut meter = restored.meter;
+    eprintln!("session: {}", store.id);
     let inputs: Vec<String> = match (&args.instruction, &args.turns_file) {
         (Some(instruction), _) => vec![instruction.clone()],
         (None, Some(path)) => read_turns(path)?,
@@ -123,7 +172,10 @@ fn run() -> Result<(), Box<dyn Error>> {
                 &client,
                 &runtime,
                 &args.tools,
-                system,
+                messages,
+                meter,
+                &store,
+                &config,
                 ctx.budget.max_turns,
                 compaction.as_ref(),
                 args.access,
@@ -137,8 +189,6 @@ fn run() -> Result<(), Box<dyn Error>> {
     let clock = Instant::now();
     let mut log = RunLog::new();
 
-    let mut messages: Vec<Value> = system.into_iter().collect();
-    let mut meter = context::Meter::default();
     for (index, input) in inputs.iter().enumerate() {
         if session {
             log.turn = Some(index as u32 + 1);
@@ -160,6 +210,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             ctx.budget.max_turns,
             &mut log,
         );
+        sessions::save_completed(&store, &config, &messages, &meter, &runtime.reader, &log);
         if session && let Some(output) = &log.final_output {
             println!("[turn {}] {output}", index + 1);
         }
@@ -190,15 +241,16 @@ fn chat(
     client: &api::Client,
     runtime: &runtime::Runtime,
     tools: &Toolset,
-    system: Option<Value>,
+    mut messages: Vec<Value>,
+    mut meter: context::Meter,
+    store: &sessions::Store,
+    config: &sessions::RequestConfig,
     max_turns: u32,
     compaction: Option<&context::Policy>,
     access: Access,
     approval: &mut dyn Approval,
 ) -> Result<(), Box<dyn Error>> {
     let stdin = io::stdin();
-    let mut messages: Vec<Value> = system.into_iter().collect();
-    let mut meter = context::Meter::default();
     let mut session = Session {
         client,
         runtime,
@@ -245,6 +297,7 @@ fn chat(
         if log.termination == Termination::MaxTurns {
             eprintln!("hel: stopped after {max_turns} model calls");
         }
+        sessions::save_completed(store, config, &messages, &meter, &runtime.reader, &log);
         if let Some(summary) = log.context_summary() {
             eprintln!("[{summary}]");
         }
@@ -371,7 +424,23 @@ fn read_turns(path: &Path) -> Result<Vec<String>, Box<dyn Error>> {
     Ok(turns)
 }
 
-fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
+fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, String> {
+    let mut args = args.peekable();
+    let management = if args.peek().is_some_and(|a| a == "sessions") {
+        args.next();
+        let command = match args.next().as_deref() {
+            None => Management::List,
+            Some("delete") => Management::Delete(args.next().ok_or("sessions delete needs an ID")?),
+            _ => return Err("usage: hel sessions [delete <id>]".into()),
+        };
+        if args.next().is_some() {
+            return Err("usage: hel sessions [delete <id>]".into());
+        }
+        Some(command)
+    } else {
+        None
+    };
+    let mut resume = None;
     let mut access = Access::Confirm;
     let mut approval_input = None;
     let mut instruction = None;
@@ -387,6 +456,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     while let Some(flag) = args.next() {
         let mut value = || args.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
+            "--resume" => resume = Some(value()?),
             "--access" => access = Access::parse(&value()?)?,
             "--approval-input" => approval_input = Some(PathBuf::from(value()?)),
             "--instruction" => instruction = Some(value()?),
@@ -442,6 +512,8 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
         None => Toolset::new(tools::DEFAULT)?,
     };
     Ok(Args {
+        resume,
+        management,
         access,
         approval_input,
         instruction,

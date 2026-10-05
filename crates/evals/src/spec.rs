@@ -70,6 +70,9 @@ pub struct Task {
     /// Instructions sent one after another in one session (H6). The last turn's output is judged.
     #[serde(default)]
     pub turns: Vec<String>,
+    /// Fixed random identifiers, one per repetition; only the first turn receives the value.
+    #[serde(default)]
+    pub recall_tokens: Vec<String>,
     pub fixture: PathBuf,
     /// Working directory within the copied fixture; siblings can be protected test data.
     #[serde(default = "fixture_root")]
@@ -92,6 +95,8 @@ pub struct Check {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum CheckKind {
+    /// Final output contains the exact task recall token for this repetition.
+    RecallToken,
     OutputExactMatch {
         expected_file: PathBuf,
     },
@@ -215,6 +220,30 @@ pub fn load_task(root: &Path, id: &str) -> Result<Task, Box<dyn Error>> {
     }
     if task.turns.iter().any(|turn| turn.trim().is_empty()) {
         return Err(format!("{}: turns must not be empty strings", path.display()).into());
+    }
+    if !task.recall_tokens.is_empty() {
+        if task.turns.len() != 2
+            || !task.turns[0].contains("{{recall_token}}")
+            || task.turns[1].contains("{{recall_token}}")
+            || task
+                .recall_tokens
+                .iter()
+                .any(|v| v.is_empty() || v.contains(char::is_whitespace))
+        {
+            return Err("recall_tokens requires two turns, a token placeholder only in turn 1, and nonempty whitespace-free tokens".into());
+        }
+        let unique: std::collections::BTreeSet<_> = task.recall_tokens.iter().collect();
+        if unique.len() != task.recall_tokens.len() {
+            return Err("recall_tokens must differ between repetitions".into());
+        }
+    }
+    if task
+        .checks
+        .iter()
+        .any(|c| matches!(c.kind, CheckKind::RecallToken))
+        && task.recall_tokens.is_empty()
+    {
+        return Err("recall_token check requires recall_tokens".into());
     }
     task.dir = dir;
     Ok(task)

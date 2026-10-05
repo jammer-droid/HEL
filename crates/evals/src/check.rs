@@ -156,6 +156,7 @@ fn judge(record: &Record, task: &Task, sidecar: &RunSidecar, run_dir: &Path) -> 
                 };
             }
             let (pass, detail) = match &check.kind {
+                CheckKind::RecallToken => recall_token(record, task),
                 CheckKind::OutputExactMatch { expected_file } => {
                     output_exact_match(record, &task.dir.join(expected_file))
                 }
@@ -202,6 +203,21 @@ fn judge(record: &Record, task: &Task, sidecar: &RunSidecar, run_dir: &Path) -> 
         run_id: sidecar.run_id.clone(),
         checks,
         overall: overall.to_string(),
+    }
+}
+
+fn recall_token(record: &Record, task: &Task) -> (bool, String) {
+    let expected = record
+        .run
+        .repetition
+        .checked_sub(1)
+        .and_then(|i| task.recall_tokens.get(i as usize));
+    match (expected, &record.outcome.final_output) {
+        (Some(expected), Some(actual)) if !expected.is_empty() => (
+            actual.contains(expected),
+            format!("expected identifier: {expected}"),
+        ),
+        _ => (false, "missing recall token or final output".to_string()),
     }
 }
 
@@ -422,6 +438,26 @@ mod tests {
         fs::write(root.join("fixture/protected/value.txt"), "unchanged\n").unwrap();
         assert_eq!(judge(&record, &task, &sidecar, &root).overall, "pass");
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn recall_checks_exact_identifier_without_requiring_exact_answer_format() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let task = crate::spec::load_task(&root, "session-resume-01").unwrap();
+        let mut record: Record = serde_json::from_str(include_str!(
+            "../../../evals/schema/examples/record-v0.json"
+        ))
+        .unwrap();
+        record.run.repetition = 2;
+        record.outcome.final_output =
+            Some(format!("Your identifier was `{}`.", task.recall_tokens[1]));
+        assert!(recall_token(&record, &task).0);
+        record.outcome.final_output = Some(task.recall_tokens[0].clone());
+        assert!(!recall_token(&record, &task).0);
+        record.outcome.final_output = Some(task.recall_tokens[1].to_lowercase());
+        assert!(!recall_token(&record, &task).0);
+        record.outcome.final_output = None;
+        assert!(!recall_token(&record, &task).0);
     }
 
     fn temp(name: &str, files: &[(&str, &str)]) -> PathBuf {

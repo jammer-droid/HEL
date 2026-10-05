@@ -7,6 +7,8 @@ collector가 run 하나마다 만드는 `results/<lab>/<run-id>/record.json`의 
 
 필드를 추가하거나 의미를 바꿀 때는 이 문서, `record.schema.json`, `availability.md`, 각 collector와 test, `CHANGELOG.md`를 함께 갱신하고 `schema_version`을 올린다.
 
+H9의 재시작 task(eval-v8)는 여러 프로세스를 하나의 run으로 수집한다. 프로세스별 원본 record는 보존하고, run 합계 계산법은 [availability.md](availability.md#h9-재시작-run-collector-eval-v8)에 따른다. 필드와 run 단위 의미는 그대로다.
+
 ## 표기
 
 - **도입**: 처음 추가된 schema version

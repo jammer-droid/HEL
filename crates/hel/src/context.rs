@@ -58,7 +58,7 @@ pub const DEFAULT_WINDOW: u64 = 1_000_000;
 const HEADROOM: u64 = 65_536;
 
 /// `--compact-at` and `--keep-recent`, in estimated tokens.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Policy {
     pub at: u64,
     pub keep_recent: u64,
@@ -77,7 +77,7 @@ impl Policy {
 }
 
 /// Remembers the last measured request so later estimates only guess the appended part.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Meter {
     /// (number of messages sent, prompt_tokens reported for them)
     sent: Option<(usize, u64)>,

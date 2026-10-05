@@ -1,7 +1,7 @@
 # Part IV 개요
 
 > [!NOTE]
-> - 시작 상태: [`h07`](https://github.com/jammer-droid/HEL/tree/h07) · 완료 상태: `h10` *(예정)*
+> - 시작 상태: [`h07`](https://github.com/jammer-droid/HEL/tree/h07) · 완료 상태: [`h10`](https://github.com/jammer-droid/HEL/tree/h10)
 > - 논문: [§10 Safety and Permission Models](https://arxiv.org/html/2609.00006v1#S10), [§16.6 Safety Architecture by Deployment Context](https://arxiv.org/html/2609.00006v1#S16.SS6)
 
 ## 현재 구조
@@ -36,7 +36,7 @@ flowchart TB
 
 ## Part III에서 드러난 문제
 
-[H6](../labs/h06-compaction/README.md)에서 model이 tool을 사용하고 일정 크기를 넘어가는 결과를 반환해야 하는 상황이라면 임시 파일에 저장하고, model에게는 이 경로를 알려주는 작업 방식을 만들었다.
+[H6](../labs/h06-compaction/)에서 model이 tool을 사용하고 일정 크기를 넘어가는 결과를 반환해야 하는 상황이라면 임시 파일에 저장하고, model에게는 이 경로를 알려주는 작업 방식을 만들었다.
 
 그러나 임시 파일은 작업 디렉터리 밖에 있어 bash로는 읽을 수 있지만, `hel`이 제공하는 읽기 전용 도구인 `read_file`로는 읽지 못한다. 즉, model에게 필요한 접근 범위와 tool이 접근할 수 있는 범위가 서로 어긋나고 있는 상황이다.
 
@@ -54,9 +54,9 @@ flowchart TB
 
 | Lab | 질문 | 더하는 구조 |
 | --- | --- | --- |
-| [H7 Permissions](../labs/h07-permissions/README.md) | 접근 레벨에 따라 미승인·금지 tool 호출을 막을 수 있는가? | 접근 레벨·Approvable·승인 처리 |
-| H8 Sandbox | 허용한 실행의 접근 범위를 어떻게 제한할 것인가? | 실행 격리 *(예정)* |
-| H9 Sessions & Checkpoints | 중단한 작업을 어떤 상태에서 다시 시작할 것인가? | 세션 저장·복원 *(예정)* |
+| [H7 Permissions](../labs/h07-permissions/) | 접근 레벨에 따라 미승인·금지 tool 호출을 막을 수 있는가? | 접근 레벨·Approvable·승인 처리 |
+| [H8 Sandbox](../labs/h08-sandbox/) | 허용한 실행의 접근 범위를 어떻게 제한할 것인가? | macOS 파일 접근 격리·인스턴스별 tmp |
+| [H9 Sessions & Checkpoints](../labs/h09-sessions-checkpoints/) | 종료한 대화를 어떤 상태에서 다시 시작할 것인가? | 대화 snapshot·세션별 spill·재개 |
 
 ## 이 Part를 마치면
 
@@ -69,8 +69,8 @@ flowchart TB
         P[접근 레벨 · 권한 판정<br/>Approvable · 호출별 승인]:::new
         T[tool 실행]
         F[직접 파일 접근]
-        I[외부 프로세스 격리<br/>H8 예정]:::planned
-        R[세션 저장 · 복원<br/>H9 예정]:::planned
+        I[외부 프로세스 격리<br/>macOS 파일 접근 경계]:::new
+        R[세션 snapshot · 복원<br/>세션별 spill · 점유 잠금]:::new
     end
     L <--> M[model]
     L <--> C
@@ -84,10 +84,9 @@ flowchart TB
     I <--> W
     L <--> R
     classDef new fill:#fff3bf,stroke:#e8590c,color:#000
-    classDef planned stroke-dasharray: 5 5
 ```
 
 - 각 tool의 Approvable 구현이 제공하는 호출 정보와 사용자가 선택한 접근 레벨로 실행 여부를 판단한다.
-- 외부 프로세스에는 파일·네트워크 접근 범위를 설정한다. 직접 파일을 다루는 tool의 경계 검사와 구분하며, 구체적인 격리 방식은 H8에서 정한다.
-- 세션을 저장하고 이어 가는 범위는 H9에서 정한다. 파일 상태를 되돌리는 것과 대화를 복원하는 것을 구분한다.
+- 외부 프로세스에는 macOS sandbox로 파일 접근 범위를 적용한다. 직접 파일 tool의 경계 검사와 구분하며, 네트워크 제한은 포함하지 않는다.
+- 답변 완료 시 대화와 관련 상태를 저장하고 같은 세션을 재개한다. 파일 상태를 되돌리는 것과 대화를 복원하는 것을 구분한다.
 - 이후 Part V에서는 이 실행 흐름에 외부 tool과 여러 agent를 연결할 때의 경계를 다룬다.

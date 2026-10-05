@@ -1,6 +1,6 @@
 # Eval Specification
 
-> eval-v7
+> eval-v8
 
 이 문서는 harness를 평가하는 절차를 harness와 무관한 형태로 정의한다. 직접 만드는 harness(`hel`)와 외부 harness(Claude Code, OpenCode, Codex 등)는 같은 task를 같은 절차로 실행하고, 같은 형식의 결과를 만든다. **새 harness를 추가할 때 바뀌는 부분은 driver와 collector뿐이다.**
 
@@ -289,3 +289,13 @@ H7의 `raw/permissions.jsonl`은 hel 원본 진단 로그다. tool 호출마다 
 `fixture_workdir`와 `file_exact_match.scope`로 프로젝트 밖의 시험 파일을 배치·보존·판정한다. record-v0과 verdict-v0 형식은 유지한다. 추가 task는 `sandbox-workspace-01`, `sandbox-outside-01`, `spill-read-01`이다.
 
 H8의 두 조건은 같은 access=auto와 compaction 설정을 사용한다. 기존 hel 코드로 baseline을 먼저 저장하고, sandbox 기본 적용과 read_file 보완 후 variant를 실행한다. 두 조건의 CLI 설정이 같아도 실행한 hel 소스 버전이 다르므로 기록된 버전을 함께 확인한다. 정답과 파일 상태만으로 실제 격리를 증명하지 않으며, raw 호출 기록·스크립트 보존·직접 sandbox test를 함께 해석한다.
+
+
+### H9 프로세스 재시작 측정 (eval-v8)
+
+- task `session-resume-01`: 두 지시와 반복별 `recall_tokens`. 첫 지시의 `{{recall_token}}`만 해당 반복 값으로 치환한다. 값은 task 작성 때 생성·고정하며, 같은 반복의 모든 조건은 같은 값을 쓴다. 둘째 지시와 fixture에는 정답을 넣지 않는다. `recall_token` check는 최종 출력에 해당 반복의 식별자가 대소문자까지 정확하게 포함됐는지 확인한다. 부가 설명은 허용한다.
+- hel 조건 `settings.session_mode`: `continuous`는 기존 `--turns-file`로 한 프로세스, `restart`는 같은 fixture에서 두 `--instruction` 프로세스, `resume`는 첫 프로세스 종료 후 `.hel/sessions/`의 새 세션 ID 하나를 찾아 둘째에 `--resume <id>`를 전달한다. driver가 메시지를 복원하거나 API에 대화를 대신 주입하지 않는다. resume fixture에는 기존 세션이 없어야 한다.
+- 이 driver는 두 지시·지시당 `max_turns: 1`, `compaction: false`, `tools: [bash]`, `access: read-only`, model params `tool_choice: none`을 요구한다. H9는 params `tools: []`로 API의 도구 정의도 비운다. 기존 hel은 빈 `--tools`를 받지 않으므로 CLI에는 bash 하나를 남기되 H7 정책으로 실행을 차단한다. 실제 tool 호출 시도는 측정 무효로 처리한다. API 재시도는 추가하지 않는다.
+- timeout은 run 전체에 한 번 적용한다. 둘째 프로세스에는 남은 시간만 주고, 이 모드에서는 기존 runner의 10초 grace를 붙이지 않는다. 첫 지시 실패·한도 초과·첫 프로세스 비정상 종료·저장된 세션 없음은 후속 실행을 중단한다.
+- 재시작 run의 원본은 `stages/01/`, `stages/02/`의 context·record·raw로 보존한다. run의 `raw/requests.jsonl`은 각 원본에 전체 `turn`과 `process`를 붙여 연결한 사본이다. 토큰·호출 수는 stage 합(derived), peak context는 최댓값(derived), last context는 마지막 stage 값이다. 필요한 stage 값이 없으면 해당 합계·최댓값도 unavailable이다. 전체 wall time은 driver가 측정한다. 마지막 지시의 출력으로 판정하고, 첫 지시가 실패하면 후속 답변으로 취급하지 않는다.
+- record-v0·verdict-v0 필드와 의미는 유지한다. 여러 프로세스도 task의 두 지시를 합쳐 run 하나다. 기존 Lab은 session_mode·recall_tokens가 없어 실행·판정 방식이 바뀌지 않으며 과거 비교 재측정은 불필요하다.

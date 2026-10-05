@@ -47,7 +47,8 @@
     - [FAQ](labs/h07-permissions/faq.md)
 - [H8 Sandbox](labs/h08-sandbox/README.md)
     - [FAQ](labs/h08-sandbox/faq.md)
-- [H9 Sessions & Checkpoints]()
+- [H9 Sessions & Checkpoints](labs/h09-sessions-checkpoints/README.md)
+  - [FAQ](labs/h09-sessions-checkpoints/faq.md)
 
 # Part V — Extensibility and Orchestration
 

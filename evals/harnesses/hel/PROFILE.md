@@ -15,7 +15,7 @@
 hel (--instruction <TEXT> | --turns-file <turns.json>) [--compact-at N --keep-recent M | --no-compaction] [--access read-only|confirm|auto] [--tools <a,b>] [--env | --no-env] [--context-file <name> | --no-context-file] [--context <run-context.json> --record <record.json>]
 ```
 
-- context 관리(H6, Adopt 이후 기본으로 켜짐): 요청 전 추정 context가 `min(W × 0.8, W − O − 65,536)`(W=1,000,000, O=출력 한도)을 넘으면 8,192자 넘는 이전 tool 결과를 줄이고, 그래도 넘으면 system 다음의 오래된 구간을 model 요약으로 바꾼다. 최근 `(W − O) × 0.16`은 원문 유지. 12,500 token 넘는 tool 결과는 H8부터 `<임시 폴더>/hel-runs/<instance-id>/spill/`(0700)에 UUID 이름의 0600 파일로 저장하고 앞·뒤·경로만 보낸다. 사용이 끝난 hel 인스턴스의 1일 지난 파일을 후속 실행에서 지우며, 사용 중인 hel 인스턴스는 잠금으로 보호한다. H6~H7의 기존 `hel-spill/`은 H8 정리 대상에 포함하지 않는다. `--compact-at N --keep-recent M`으로 기준을 바꾸고 `--no-compaction`으로 끈다. Lab 정의의 `settings.compaction: {at_tokens, keep_recent_tokens}` / `false`가 이 인자가 된다. 요약 요청은 raw log에 `purpose: compaction`으로 남는다(`h06`의 `hel`에는 없다).
+- context 관리(H6, Adopt 이후 기본으로 켜짐): 요청 전 추정 context가 `min(W × 0.8, W − O − 65,536)`(W=1,000,000, O=출력 한도)을 넘으면 8,192자 넘는 이전 tool 결과를 줄이고, 그래도 넘으면 system 다음의 오래된 구간을 model 요약으로 바꾼다. 최근 `(W − O) × 0.16`은 원문 유지. 12,500 token 넘는 tool 결과는 H9부터 `<cwd>/.hel/sessions/<session-id>/spill/`(0700)에 UUID 이름의 0600 파일로 저장하고 앞·뒤·경로만 보낸다. 세션 삭제 때 함께 지우며 24시간 정리 대상에서 제외한다. 이전 H8의 임시 저장소에는 기존 비활성 24시간 정리를 유지한다. H6~H7의 기존 `hel-spill/`은 H8 정리 대상에 포함하지 않는다. `--compact-at N --keep-recent M`으로 기준을 바꾸고 `--no-compaction`으로 끈다. Lab 정의의 `settings.compaction: {at_tokens, keep_recent_tokens}` / `false`가 이 인자가 된다. 요약 요청은 raw log에 `purpose: compaction`으로 남는다(`h06`의 `hel`에는 없다).
 - `--turns-file <turns.json>`: JSON 문자열 목록의 지시를 한 세션에서 차례로 보낸다(H6, eval-v5 세션 task). `max_turns`는 지시마다 적용한다. record는 하나이고 최종 출력은 마지막 지시의 답이다. 한 지시가 오류·한도로 끝나면 남은 지시는 보내지 않는다. raw log 항목에 `turn`(1부터)을 남긴다.
 
 - `--tools`: model에게 줄 tool 목록(쉼표 구분). 없으면 `hel`의 기본 tool 구성을 쓴다(H0·`h01`: `read_file`, H1부터: `bash`). 측정 조건은 기본값에 기대지 않고 `settings.tools`로 명시한다. Lab 정의의 hel 조건에 `settings.tools`가 있으면 runner가 이 인자로 넘긴다. H1에서 추가(`h01`의 `hel`에는 없다. baseline 조건에는 `settings.tools`를 두지 않는다).
@@ -73,3 +73,22 @@ TTY가 있으면 호출 이름·JSON 인자를 표시하고 y/yes에만 승인�
 - 내부 파일 tool은 공통 Runtime의 경로 검사를 사용한다. canonical 경로를 검사하고 허용 루트의 디렉터리 descriptor를 기준으로 O_NOFOLLOW openat을 사용한다. 편집은 프로젝트 안에서만 허용하며, 프로젝트가 run 저장소의 상위 경로여도 저장소를 쓰기 범위에서 제외한다.
 - read_file(path, start_line?, max_lines?)는 1부터 시작하는 줄 범위를 읽는다. 기본은 처음부터 EOF 방향이며 응답은 안내를 포함해 10,000 UTF-8 바이트 이내다. 잘린 범위는 read_file(cursor)로 이어 읽는다. cursor는 같은 hel 인스턴스에서만 유효하고 파일 변경 시 거절한다. 최근 128개 cursor를 보관하며 오래된 cursor는 새 범위 읽기로 대체해야 한다.
 - H8 baseline은 구현 전의 소스로 저장했다. 구현 후 소스로 이전 조건의 baseline을 다시 실행하지 않는다. 측정 당시 소스와 측정 후 시스템 경로 보완 소스는 결과 폴더에 별도로 보존한다.
+
+
+## H9 측정 driver (eval-v8)
+
+`settings.session_mode`의 continuous/restart/resume 실행은 [SPEC §H9](../../SPEC.md#h9-프로세스-재시작-측정-eval-v8)를 따른다. resume는 hel의 `--resume <id>`를 사용한다. H9에서 구현 전 baseline·연속 각3회와 구현 후 resume3회를 실행했다. 이전소스로측정한결과는그대로보존한다.
+
+H9 요청 params의 `tools: []`, `tool_choice: none`은 도구를 비활성화한다. CLI의 유일한 bash는 access=read-only로도 실행을 차단한다. DeepSeek의 `tool_choice: none` 계약은 [공식 API 문서](https://api-docs.deepseek.com/api/create-chat-completion/)에서 확인했다(2026-10-05). H9의 실제18요청에서도 tools=[]·none과도구호출0회를확인했다.
+
+재시작 run만 collector가 두 stage의 record를 합친다. 원본은 stage 디렉터리에 그대로 보존하며, 합산 지표는 derived·전체 시간은 measured로 구분한다. 이외 조건에서는 기존 record를 그대로 읽는다.
+
+
+## H9 세션 실행 규약
+
+- 일반 실행·--instruction·--turns-file은 기본 새 세션을 시작한다. --resume <UUID>는 같은 작업 디렉터리의 세션을 재개한다. 시작 시 stderr에 session: ID를 표시한다. `hel sessions`와 `hel sessions delete <UUID>`는 model 호출·API key 없이 목록·삭제를 수행한다.
+- cwd를 프로젝트 경계로 삼으며 상위 Git root를 찾지 않는다. `.hel/sessions/<id>/snapshot.json`에 schema_version=1, session_id, cwd, 시각, request_config, messages, meter, reader를 저장한다. `.hel/.gitignore`는 내부 상태를 제외하며, 검색의 마지막 제외 glob과 Runtime/native sandbox도 내부 저장소를 보호한다.
+- 완료 답변 뒤 임시 파일 쓰기·sync·rename·디렉터리sync. 저장실패는경고후메모리계속,다음완료에전체snapshot재시도. API오류/출력한도/미완료답변에는저장하지않는다. 초기저장소·점유실패는시작거절이며, 완료된snapshot이없는세션은재개할수없다.
+- 재개 시 system은 현재 env/HEL.md로 교체, 나머지메시지·요약·tool결과는보존. 현재model/tools/params/output/compaction/access를사용한다. 동일input조건이면Meter관측값복원,그외초기화;출력한도·압축정책만변경하면관측값유지. Reader는cursor와위치·파일identity를복원하며128개한도·변경파일거절·경로검사유지.
+- .hel의store작업잠금은acquire/delete경합을직렬화하고각session의.active는인스턴스수명동안점유한다. 자식에인스턴스·세션FD를상속하므로본체종료후자식이보유해도재개/삭제거절. tmp는인스턴스소유유지,spill은세션소유로정상종료후보관한다.
+- 현재session spill읽기외에.hel데이터는tool읽기/쓰기에서제외한다. snapshot형식·ID/cwd·tool연결·cursor형식이잘못되면재개거절. H8의기존spill을새세션으로이관하지않으며프로젝트이동·파일되돌리기·mid-tool복구는지원하지않는다.

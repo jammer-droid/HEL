@@ -58,6 +58,7 @@ impl std::error::Error for ApiError {}
 
 pub struct Client {
     http: reqwest::blocking::Client,
+    endpoint: String,
     api_key: String,
     model: String,
     max_tokens: u32,
@@ -77,8 +78,14 @@ impl Client {
             .timeout(timeout)
             .build()?;
         let params = params.as_object().cloned().unwrap_or_default();
+        // The mock endpoint exists only in the test binary, never in the shipped CLI.
+        #[cfg(test)]
+        let endpoint = std::env::var("HEL_TEST_API_URL").unwrap_or_else(|_| API_URL.to_string());
+        #[cfg(not(test))]
+        let endpoint = API_URL.to_string();
         Ok(Self {
             http,
+            endpoint,
             api_key,
             model: model.to_string(),
             max_tokens,
@@ -106,7 +113,7 @@ impl Client {
 
         let response = self
             .http
-            .post(API_URL)
+            .post(&self.endpoint)
             .bearer_auth(&self.api_key)
             .json(&body)
             .send()

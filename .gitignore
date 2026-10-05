@@ -28,3 +28,6 @@ Thumbs.db
 # Local style review snapshots, user messages and Codex outputs
 /tools/.style-review/
 /tools/__pycache__/
+
+# Local hel session history and spill artifacts
+.hel/

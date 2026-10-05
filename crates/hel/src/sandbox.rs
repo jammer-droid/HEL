@@ -44,11 +44,13 @@ const PROFILE: &str = r#"
             (subpath "/System/Library") (subpath "/System/Cryptexes/OS")
             (subpath "/System/Volumes/Preboot/Cryptexes/OS/System/Library")
             (subpath "/System/Volumes/Preboot/Cryptexes/OS/usr/lib") (subpath "/Library/Apple"))
-        (require-not (subpath (param "STORE")))))
+        (require-not (subpath (param "STORE")))
+        (require-not (regex #"/\.hel(/|$)"))))
 (allow file-read* file-map-executable
     (subpath (param "TMP")) (subpath (param "SPILL")))
 (allow file-write*
-    (require-all (subpath (param "PROJECT")) (require-not (subpath (param "STORE")))))
+    (require-all (subpath (param "PROJECT")) (require-not (subpath (param "STORE")))
+        (require-not (regex #"/\.hel(/|$)"))))
 (allow file-write* (subpath (param "TMP")))
 (allow file-read-metadata
     (path-ancestors (param "PROJECT"))
@@ -110,14 +112,18 @@ fn command_with_launcher(
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        let fd = runtime.lease_fd();
+        let fds = runtime.lease_fds();
         // SAFETY: only async-signal-safe fcntl is used between fork and exec. The runtime
         // outlives command execution at each call site; other descriptors keep CLOEXEC.
         unsafe {
             command.pre_exec(move || {
-                let flags = libc::fcntl(fd, libc::F_GETFD);
-                if flags == -1 || libc::fcntl(fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC) == -1 {
-                    return Err(std::io::Error::last_os_error());
+                for &fd in &fds {
+                    let flags = libc::fcntl(fd, libc::F_GETFD);
+                    if flags == -1
+                        || libc::fcntl(fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC) == -1
+                    {
+                        return Err(std::io::Error::last_os_error());
+                    }
                 }
                 Ok(())
             });

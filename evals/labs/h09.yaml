@@ -1,0 +1,65 @@
+lab: h09
+title: Sessions & Checkpoints
+revision: 1
+description: >
+  Recall one identifier in two user instructions. Compare a continuous process,
+  two processes without restore, and two processes using hel session resume.
+model:
+  provider: deepseek
+  id: deepseek-flash
+  params:
+    tools: []
+    tool_choice: none
+budget:
+  max_turns: 1
+  timeout_seconds: 120
+  max_output_tokens: 8192
+conditions:
+  - name: variant-continuous
+    harness: hel
+    settings:
+      session_mode: continuous
+      tools: [bash]
+      access: read-only
+      env: false
+      context_file: false
+      compaction: false
+  - name: baseline
+    harness: hel
+    settings:
+      session_mode: restart
+      tools: [bash]
+      access: read-only
+      env: false
+      context_file: false
+      compaction: false
+  - name: variant
+    harness: hel
+    settings:
+      session_mode: resume
+      tools: [bash]
+      access: read-only
+      env: false
+      context_file: false
+      compaction: false
+tasks: [session-resume-01]
+repetitions: 3
+rubric:
+  recall: >
+    The final answer contains the full case-sensitive identifier for this repetition.
+    Surrounding prose is allowed. The three conditions use the same identifier per
+    repetition, and repetitions use distinct identifiers fixed in the task definition.
+  request-evidence: >
+    Inspect raw requests: tools is empty, tool_choice is none, only the first user
+    instruction contains the identifier. The second request includes prior history
+    only in continuous and resume conditions. No tool attempts are permitted.
+  budgets: >
+    Two requests per successful run, one per user instruction, no API retries or
+    compaction calls. The 120-second deadline covers all processes of a run.
+  source: >
+    Measure baseline and variant-continuous before changing hel. Measure variant
+    after implementing sessions. This avoids adding session writes to the control.
+  deterministic: >
+    Separate local/mock tests cover cross-process history, summary and tool-call
+    restoration, cursor and spill access, current settings and Meter invalidation,
+    occupied-session refusal, and failed-save continuation with a later save.
