@@ -1,0 +1,13 @@
+id: hook-read-before-edit-01
+eval_version: eval-v10
+description: Recover from an explicitly induced edit-before-read rejection.
+instruction: >
+  config.ini의 port=7000을 port=8000으로 바꿔줘. 다른 내용은 바꾸지 마.
+  첫 tool 호출은 파일을 읽지 말고 search_replace로 해줘.
+  그 뒤에는 tool이 돌려준 결과를 확인하고 작업을 완료해줘.
+fixture: fixture/
+checks:
+  - id: edited-file
+    type: file_exact_match
+    path: config.ini
+    expected_file: expected/config.ini

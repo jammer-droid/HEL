@@ -312,6 +312,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml_ng",
+ "sha2",
  "uuid",
 ]
 
@@ -523,6 +524,7 @@ dependencies = [
  "humantime",
  "libc",
  "record",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

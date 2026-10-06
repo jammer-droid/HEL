@@ -11,6 +11,7 @@ use std::time::{Duration, SystemTime};
 
 use record::{Record, Termination};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use crate::runner::{self, RunJob};
 
@@ -255,6 +256,7 @@ pub(crate) fn run_process(
 ) -> Result<Record, Box<dyn Error>> {
     // Fail before spawning hel (and making model calls) if the requested engine is unavailable.
     let path = run_path(&job.condition.settings, &job.run_dir)?;
+    prepare_hook_trust(&job.condition.settings, &job.workdir, &job.run_dir)?;
     let context_path = job.run_dir.join("context.json");
     fs::write(
         &context_path,
@@ -352,6 +354,52 @@ pub(crate) fn run_process(
     }
 }
 
+/// The manifest pins the user-approved hook definition. Re-check those exact bytes in the
+/// copied fixture before recording trust for its new path; hel still verifies the trust file.
+fn prepare_hook_trust(
+    settings: &Value,
+    workdir: &Path,
+    run_dir: &Path,
+) -> Result<(), Box<dyn Error>> {
+    let Some(expected) = settings.get("hooks_sha256") else {
+        return Ok(());
+    };
+    let expected = expected
+        .as_str()
+        .filter(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+        .ok_or("settings.hooks_sha256 must pin a reviewed hook configuration SHA-256")?;
+    let project = workdir.canonicalize()?;
+    let directory = project.join(".hel");
+    let config_path = directory.join("hooks.json");
+    if fs::symlink_metadata(&directory)?.file_type().is_symlink()
+        || !fs::symlink_metadata(&config_path)?.is_file()
+        || fs::metadata(&config_path)?.len() > 1_048_576
+    {
+        return Err("hook fixture must contain a plain .hel/hooks.json of at most 1 MiB".into());
+    }
+    let config = fs::read(&config_path)?;
+    let digest = format!("{:x}", Sha256::digest(&config));
+    if digest != expected {
+        return Err(
+            "hook fixture differs from the reviewed hooks_sha256; no run was started".into(),
+        );
+    }
+    let trust_path = directory.join("hooks-trust.json");
+    if fs::symlink_metadata(&trust_path).is_ok_and(|meta| !meta.is_file()) {
+        return Err("hook trust destination is not a plain file".into());
+    }
+    let trust = serde_json::to_vec_pretty(&serde_json::json!({
+        "schema_version": 1,
+        "project": project,
+        "sha256": digest,
+    }))?;
+    fs::write(&trust_path, &trust)?;
+    fs::set_permissions(&trust_path, fs::Permissions::from_mode(0o600))?;
+    fs::write(run_dir.join("raw/hooks-trust.json"), &trust)?;
+    fs::write(run_dir.join("raw/hooks-config.json"), &config)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -400,6 +448,38 @@ mod tests {
         assert!(tool_args(&json!({ "tools": [] })).is_err());
         assert!(tool_args(&json!({ "tools": "bash" })).is_err());
         assert!(tool_args(&json!({ "tools": [1] })).is_err());
+    }
+
+    #[test]
+    fn reviewed_hook_fixture_is_bound_to_its_copied_project_and_exact_hash() {
+        let root = std::env::temp_dir().join(format!("evals-hooks-{}", uuid::Uuid::new_v4()));
+        let project = root.join("project");
+        let run = root.join("run");
+        fs::create_dir_all(project.join(".hel")).unwrap();
+        fs::create_dir_all(run.join("raw")).unwrap();
+        let config = b"{\"hooks\":{}}\n";
+        fs::write(project.join(".hel/hooks.json"), config).unwrap();
+        let settings = json!({"hooks_sha256": format!("{:x}", Sha256::digest(config))});
+        prepare_hook_trust(&settings, &project, &run).unwrap();
+        let trust: Value =
+            serde_json::from_slice(&fs::read(project.join(".hel/hooks-trust.json")).unwrap())
+                .unwrap();
+        assert_eq!(trust["project"], json!(project.canonicalize().unwrap()));
+        assert_eq!(trust["sha256"], settings["hooks_sha256"]);
+        assert_eq!(fs::read(run.join("raw/hooks-config.json")).unwrap(), config);
+        assert_eq!(
+            fs::read(project.join(".hel/hooks-trust.json")).unwrap(),
+            fs::read(run.join("raw/hooks-trust.json")).unwrap()
+        );
+        fs::remove_file(project.join(".hel/hooks-trust.json")).unwrap();
+        fs::write(project.join(".hel/hooks.json"), b"{\"hooks\":{}}\n\n").unwrap();
+        assert!(prepare_hook_trust(&settings, &project, &run).is_err());
+        assert!(!project.join(".hel/hooks-trust.json").exists());
+        assert!(prepare_hook_trust(&json!({"hooks_sha256": true}), &project, &run).is_err());
+        fs::remove_dir_all(&project).unwrap();
+        prepare_hook_trust(&json!({}), &project, &run).unwrap();
+        assert!(!project.exists());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

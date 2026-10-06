@@ -92,3 +92,7 @@ H9 요청 params의 `tools: []`, `tool_choice: none`은 도구를 비활성화�
 - 재개 시 system은 현재 env/HEL.md로 교체, 나머지메시지·요약·tool결과는보존. 현재model/tools/params/output/compaction/access를사용한다. 동일input조건이면Meter관측값복원,그외초기화;출력한도·압축정책만변경하면관측값유지. Reader는cursor와위치·파일identity를복원하며128개한도·변경파일거절·경로검사유지.
 - .hel의store작업잠금은acquire/delete경합을직렬화하고각session의.active는인스턴스수명동안점유한다. 자식에인스턴스·세션FD를상속하므로본체종료후자식이보유해도재개/삭제거절. tmp는인스턴스소유유지,spill은세션소유로정상종료후보관한다.
 - 현재session spill읽기외에.hel데이터는tool읽기/쓰기에서제외한다. snapshot형식·ID/cwd·tool연결·cursor형식이잘못되면재개거절. H8의기존spill을새세션으로이관하지않으며프로젝트이동·파일되돌리기·mid-tool복구는지원하지않는다.
+
+## H10 Hooks 측정 준비
+
+`settings.hooks_sha256`을 지정하면 driver가 사용자가 검토한 fixture 설정과 복사본의 SHA-256을 대조하고 run별 프로젝트 경로로 신뢰를 등록한다. 해당 설정이 없으면 신뢰를 만들지 않는다. hooks 신뢰검증을 끄는 실행 옵션은 사용하지 않는다. 명령은 .hel/hooks.json의 고정된 테스트 스크립트이며, baseline과 variant는 같은 fixture/지시/도구/예산을 사용한다. 스크립트는 외부 명령으로 실행되지만 상태는 run별 fixture 안에만 기록한다.

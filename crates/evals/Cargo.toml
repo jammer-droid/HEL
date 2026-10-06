@@ -11,3 +11,4 @@ serde_yaml_ng = "0.10"
 jsonschema = { version = "0.58", default-features = false }
 uuid = { version = "1", features = ["v4"] }
 humantime = "2"
+sha2 = "0.10"

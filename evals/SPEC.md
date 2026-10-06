@@ -305,3 +305,11 @@ H8의 두 조건은 같은 access=auto와 compaction 설정을 사용한다. 기
 - `skill-config-review-01` 추가. 리뷰 skill과 참고 규칙, 무관한 skill, 잘못된 포트 설정을 같은 fixture에 배치한다. 기존 `output_exact_match`와 `file_exact_match`를 사용하며 runner·record·verdict 형식은 바꾸지 않는다.
 - 규칙 적용과 skill 선택은 raw tool 반환 내용으로 별도 확인한다. 출력 완전 일치와 의미상 오류 발견을 구분한다.
 - 기존 task의 입력·판정은 바뀌지 않아 이전 Lab을 다시 측정하지 않는다. 최초 H10 측정 당시 task의 버전 표기는 eval-v8이었으며, 새 task 추가에 따른 버전 표기를 eval-v9로 정리했다. fixture·check·Lab 정의와 측정 결과는 그대로 유지한다.
+
+### H10 Hooks 회복 측정 (eval-v10)
+
+- `hook-read-before-edit-01` 추가: 첫 search_replace를 명시 유도, 성공한 read_file을 기록하는 command hook·짧은 설정 파일·기대 파일 포함. 기존 file_exact_match로 최종 상태를 확인하고 회복 순서는 raw trace로 별도 판정한다.
+- hel 조건 `settings.hooks_sha256`은 사용자가 검토한 fixture의 `.hel/hooks.json` SHA-256이다. driver는 복사된 설정과 대조해 일치할 때만 해당 작업경로의 신뢰 파일을 만든다. 불일치/누락/비정상파일은 API 호출 전에 중단한다. 설정 원본/등록한 신뢰는 raw/hooks-config.json·raw/hooks-trust.json에 보존한다. hel은 일반 신뢰 검증을 그대로 수행하며 우회 플래그를 쓰지 않는다.
+- test 스크립트의 이력은 run별 fixture `.hel/read-guard-state.json`에 두며 `.hel/read-guard-events.jsonl`에 정책 판단을 기록한다. 실제 model 노출 tool은 read_file/search_replace로 제한하고 보호 경로의 시험 상태는 읽거나 수정할 수 없다. fixture 사본과 함께 run별로 격리·보존되며 세션 snapshot의 복원 대상이 아니다.
+- hel의 추가 hook 진단은 raw/hooks.jsonl로 보존한다. raw/permissions.jsonl의 hook_blocked=true는 권한 정책에 도달하기 전에 hook이 거절했음을 구분한다. record-v0·verdict-v0의 필드/의미는 변경하지 않는다. tool event.ok는 원래 tool 실행 성공 여부이며 Post 피드백 대체 여부와 구분한다.
+- 기존 Labs의 정의/결과/실행 경로는 변경하지 않는다. H10 Skills revision1은 보존하고 Hooks는 revision2로 분리한다.

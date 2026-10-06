@@ -139,6 +139,9 @@ pub struct Trace {
     pub approval: Option<Response>,
     /// True means the tool implementation was entered, not that its operation succeeded.
     pub executed: bool,
+    /// A hook rejected the invocation before the permission policy was consulted.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hook_blocked: bool,
 }
 
 pub struct Execution {
@@ -162,6 +165,7 @@ pub fn execute(
         decision: Decision::Deny,
         approval: None,
         executed: false,
+        hook_blocked: false,
     };
     let Some(tool) = tool else {
         return Execution {

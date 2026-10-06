@@ -25,6 +25,7 @@
 
 mod api;
 mod context;
+mod hooks;
 mod output;
 mod permissions;
 mod prompt;
@@ -176,6 +177,7 @@ fn run_args(args: Args) -> Result<(), Box<dyn Error>> {
         .sync_system(&mut restored.messages, &mut restored.meter);
     runtime.skills = std::cell::RefCell::new(restored.skills);
     runtime.reader = restored.reader;
+    runtime.hooks = hooks::Hooks::load(&runtime.project, &store.id);
     let mut messages = restored.messages;
     let mut meter = restored.meter;
     eprintln!("session: {}", store.id);
@@ -253,6 +255,7 @@ fn run_args(args: Args) -> Result<(), Box<dyn Error>> {
     }
     if let Some(path) = &args.record {
         log.write(&ctx, started, ended, wall_time_ms, path)?;
+        runtime.hooks.write_trace(path)?;
     }
     Ok(())
 }
@@ -420,7 +423,7 @@ fn run_loop(
                 .and_then(|raw| serde_json::from_str(raw).ok())
                 .unwrap_or_else(|| json!({}));
             runtime.skills.borrow_mut().reconcile(messages);
-            let execution = tools.call(runtime, name, &args, *access, *approval);
+            let execution = tools.call_with_id(runtime, id, name, &args, *access, *approval);
             runtime.skills.borrow().sync_system(messages, meter);
             log.permissions.push(execution.trace);
             let result = execution.result;

@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^search_replace$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 hooks/read_guard.py --state .hel/read-guard-state.json --audit .hel/read-guard-events.jsonl",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^read_file$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 hooks/read_guard.py --state .hel/read-guard-state.json --audit .hel/read-guard-events.jsonl",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

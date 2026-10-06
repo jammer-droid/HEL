@@ -65,9 +65,24 @@ impl Toolset {
     }
 
     /// Every production invocation passes through the common permission gate.
+    #[cfg(test)]
     pub fn call(
         &self,
         runtime: &Runtime,
+        name: &str,
+        args: &Value,
+        access: Access,
+        approval: &mut dyn Approval,
+    ) -> Execution {
+        self.call_with_id(runtime, "", name, args, access, approval)
+    }
+
+    /// Hooks and the permission gate share this path, including callers outside the model loop.
+    #[allow(clippy::too_many_arguments)]
+    pub fn call_with_id(
+        &self,
+        runtime: &Runtime,
+        id: &str,
         name: &str,
         args: &Value,
         access: Access,
@@ -78,7 +93,33 @@ impl Toolset {
             .iter()
             .find(|tool| tool.name() == name)
             .map(|tool| tool.as_ref());
-        permissions::execute(tool, name, args, runtime, access, approval)
+        let Some(known) = tool else {
+            return permissions::execute(tool, name, args, runtime, access, approval);
+        };
+        let call = crate::hooks::Call { id, name, args };
+        if let Some(reason) = runtime.hooks.before(runtime, &call) {
+            return Execution {
+                result: Err(reason),
+                trace: permissions::Trace {
+                    name: name.to_owned(),
+                    args: args.clone(),
+                    access,
+                    action: Some(known.action(args)),
+                    decision: permissions::Decision::Deny,
+                    approval: None,
+                    executed: false,
+                    hook_blocked: true,
+                },
+            };
+        }
+        let mut execution = permissions::execute(tool, name, args, runtime, access, approval);
+        if let Ok(original) = &execution.result
+            && let Some(feedback) = runtime.hooks.after(runtime, &call, original)
+        {
+            // The tool itself succeeded; only the model-visible result is replaced.
+            execution.result = Ok(feedback);
+        }
+        execution
     }
 
     #[cfg(test)]

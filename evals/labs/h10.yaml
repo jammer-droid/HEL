@@ -1,6 +1,6 @@
 lab: h10
-title: Skills configuration review
-revision: 1
+title: Hooks read-before-edit recovery
+revision: 2
 model:
   provider: deepseek
   id: deepseek-flash
@@ -13,37 +13,45 @@ conditions:
   - name: baseline
     harness: hel
     settings:
-      tools: [bash, read_file]
+      tools: [read_file, search_replace]
       access: auto
       env: true
       context_file: false
       compaction: false
+      hooks_sha256: 243dc0d4dd1da8b1693879b131aa6b3ef099281b9b4eb5cc7150a9b23fef8f4e
   - name: variant
     harness: hel
     settings:
-      tools: [bash, read_file]
+      tools: [read_file, search_replace]
       access: auto
       env: true
       context_file: false
       compaction: false
-tasks: [skill-config-review-01]
+      hooks_sha256: 243dc0d4dd1da8b1693879b131aa6b3ef099281b9b4eb5cc7150a9b23fef8f4e
+tasks: [hook-read-before-edit-01]
 repetitions: 3
 rubric:
   source: >
-    Baseline is hel before Skills (checkout 361496d), variant is Skills implementation
-    69045c3. Both use identical fixture, instruction, tools, model and budgets.
-    Baseline is measured retrospectively after implementation, not before it.
-  selection: >
-    Inspect raw calls and successful tool results for config-review/SKILL.md;
-    record unrelated release-notes reads separately. bash reads also count as evidence.
-  rules: >
-    Inspect successful reads of references/rules.md and server.json, and separately
-    assess whether the final answer identifies port 7000 outside 8000 through 9000.
-  format: >
-    report-exact checks the skill's prescribed line, not semantic correctness alone.
-    A formatting failure must not be described as failure to detect the invalid port.
-  budget: >
-    Six runs total, at most eight model calls per run, no retries or compaction calls.
+    Baseline is hel before command hooks were implemented.
+    Run baseline before modifying crates/hel. Variant uses the implemented command hooks.
+    Both receive the same reviewed fixture and path-bound trust record; the old hel ignores hooks.
+  induction: >
+    Record whether the first actual tool call is search_replace on config.ini.
+    Reading first is an induction miss, not a successful rejection-and-recovery case.
+    Do not retry until a preferred trajectory appears.
+  rejection: >
+    With hooks enabled, verify the first edit is not executed and its read-first feedback
+    appears in the next model request. Hook activation and feedback delivery are prerequisites.
+  recovery: >
+    Verify a successful read_file of config.ini after the rejection and a later successful
+    search_replace, in that order, plus edited-file. Final output prose is not proof of reading.
+    Report induction count out of all runs and recovery count out of observed rejections.
+  baseline: >
+    A direct edit without hooks is expected to succeed. File completion alone is not recovery.
+    This measures compliance with an enforced prerequisite, not generic editing accuracy.
   scope: >
-    No external harness or long-context behavior measurement. Snapshot, compaction
-    preservation and duplicate-body handling are covered by deterministic tests.
+    Deterministic tests cover configuration, trust, matching, ordering, failure semantics,
+    post-result replacement and process/output limits. Only the recovery task calls the model.
+  budget: >
+    Six runs total, at most eight model requests and 8192 output tokens per request, 120 seconds
+    per run; no retries, no compaction calls. User approved this budget on 2026-10-06.

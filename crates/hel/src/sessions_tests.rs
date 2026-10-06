@@ -835,3 +835,129 @@ fn h9_snapshot_without_skills_still_restores() {
     drop(store);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn actual_cli_hook_rejection_reaches_model_then_read_unlocks_edit() {
+    use sha2::{Digest, Sha256};
+    let root = project().canonicalize().unwrap();
+    fs::create_dir_all(root.join(".hel")).unwrap();
+    fs::create_dir(root.join("hooks")).unwrap();
+    let config =
+        include_bytes!("../../../evals/tasks/hook-read-before-edit-01/fixture/.hel/hooks.json");
+    fs::write(root.join(".hel/hooks.json"), config).unwrap();
+    fs::write(
+        root.join("hooks/read_guard.py"),
+        include_str!("../../../evals/tasks/hook-read-before-edit-01/fixture/hooks/read_guard.py"),
+    )
+    .unwrap();
+    fs::write(root.join("config.ini"), "port=7000\n").unwrap();
+    // Register exactly the reviewed fixture through the same persisted trust contract as the CLI.
+    fs::write(
+        root.join(".hel/hooks-trust.json"),
+        json!({
+            "schema_version":1,"project":root,"sha256":format!("{:x}",Sha256::digest(config))
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let tool = |id: &str, name: &str, args: Value| {
+        json!({
+            "role":"assistant","content":null,"tool_calls":[{
+                "id":id,"type":"function","function":{"name":name,"arguments":args.to_string()}
+            }]
+        })
+    };
+    let edit = json!({"path":"config.ini","search":"port=7000","replace":"port=8000"});
+    let (url, server) = mock_responses(vec![
+        tool("edit-first", "search_replace", edit.clone()),
+        tool(
+            "read-after-feedback",
+            "read_file",
+            json!({"path":"config.ini"}),
+        ),
+        tool("edit-retry", "search_replace", edit),
+        json!({"role":"assistant","content":"done"}),
+    ]);
+    successful(
+        child(
+            &root,
+            &[
+                "--instruction",
+                "edit first",
+                "--tools",
+                "read_file,search_replace",
+                "--access",
+                "auto",
+                "--no-compaction",
+            ],
+            Some(&url),
+        )
+        .output()
+        .unwrap(),
+    );
+    let requests = server.join().unwrap();
+    assert_eq!(requests.len(), 4);
+    let second = requests[1]["messages"].as_array().unwrap().last().unwrap();
+    assert_eq!(second["tool_call_id"], "edit-first");
+    assert!(
+        second["content"]
+            .as_str()
+            .unwrap()
+            .contains("먼저 read_file")
+    );
+    let third = requests[2]["messages"].as_array().unwrap().last().unwrap();
+    assert_eq!(third["content"], "port=7000\n");
+    let fourth = requests[3]["messages"].as_array().unwrap().last().unwrap();
+    assert_eq!(fourth["content"], "replaced 1 occurrence in config.ini");
+    assert_eq!(
+        fs::read_to_string(root.join("config.ini")).unwrap(),
+        "port=8000\n"
+    );
+    let events: Vec<Value> = fs::read_to_string(root.join(".hel/read-guard-events.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|s| serde_json::from_str(s).unwrap())
+        .collect();
+    assert_eq!(
+        events
+            .iter()
+            .map(|v| v["result"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["blocked", "read-recorded", "allowed"]
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn actual_cli_skips_untrusted_hooks_without_interactive_input() {
+    let root = project();
+    fs::create_dir_all(root.join(".hel")).unwrap();
+    fs::write(
+        root.join(".hel/hooks.json"),
+        json!({"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"touch hook-ran"}]}]}})
+            .to_string(),
+    )
+    .unwrap();
+    fs::write(root.join("a"), "data").unwrap();
+    let (url, server) = mock_responses(vec![
+        json!({"role":"assistant","content":null,"tool_calls":[{"id":"r","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"a\"}"}}]}),
+        json!({"role":"assistant","content":"done"}),
+    ]);
+    let output = child(
+        &root,
+        &["--instruction", "read a", "--tools", "read_file"],
+        Some(&url),
+    )
+    .output()
+    .unwrap();
+    assert!(String::from_utf8_lossy(&output.stderr).contains("hooks skipped"));
+    successful(output);
+    let requests = server.join().unwrap();
+    assert_eq!(
+        requests[1]["messages"].as_array().unwrap().last().unwrap()["content"],
+        "data"
+    );
+    assert!(!root.join("hook-ran").exists());
+    assert!(!root.join(".hel/hooks-trust.json").exists());
+    fs::remove_dir_all(root).unwrap();
+}
