@@ -417,4 +417,4 @@ fn validate_snapshot(snapshot: &Snapshot, project: &Path, id: &str) -> Result<()
 
 #[cfg(test)]
 #[path = "sessions_tests.rs"]
-mod tests;
+pub(crate) mod tests;

@@ -43,7 +43,11 @@ const PROFILE: &str = r#"
             (subpath "/usr/lib") (subpath "/usr/libexec") (subpath "/usr/share")
             (subpath "/System/Library") (subpath "/System/Cryptexes/OS")
             (subpath "/System/Volumes/Preboot/Cryptexes/OS/System/Library")
-            (subpath "/System/Volumes/Preboot/Cryptexes/OS/usr/lib") (subpath "/Library/Apple"))
+            (subpath "/System/Volumes/Preboot/Cryptexes/OS/usr/lib") (subpath "/Library/Apple")
+            ; Homebrew package trees only (tools such as rg link their libraries from here);
+            ; Homebrew etc/ and var/ stay unreadable.
+            (subpath "/opt/homebrew/Cellar") (subpath "/opt/homebrew/opt") (subpath "/opt/homebrew/lib")
+            (subpath "/usr/local/Cellar") (subpath "/usr/local/opt") (subpath "/usr/local/lib"))
         (require-not (subpath (param "STORE")))
         (require-not (regex #"/\.hel(/|$)"))))
 (allow file-read* file-map-executable
@@ -58,7 +62,8 @@ const PROFILE: &str = r#"
     (path-ancestors (param "TMP"))
     (path-ancestors (param "SPILL"))
     (literal "/") (literal "/dev") (literal "/etc")
-    (literal "/tmp") (literal "/var"))
+    (literal "/tmp") (literal "/var")
+    (literal "/opt") (literal "/opt/homebrew") (literal "/usr/local"))
 (allow file-read*
     (literal "/")
     (literal "/dev/random") (literal "/dev/urandom")
@@ -203,6 +208,45 @@ printf OK
         assert_eq!(fs::read(&protected).unwrap(), b"protected");
         assert_eq!(fs::read(&spill).unwrap(), b"stored");
         assert_eq!(fs::read(runtime.project.join("normal")).unwrap(), b"after");
+        drop(runtime);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn homebrew_package_trees_are_readable_but_its_configuration_is_not() {
+        let prefix = Path::new("/opt/homebrew");
+        let Some(library) = fs::read_dir(prefix.join("lib")).ok().and_then(|entries| {
+            entries
+                .flatten()
+                .map(|e| e.path())
+                .find(|p| p.extension().is_some_and(|x| x == "dylib"))
+        }) else {
+            return; // No Apple Silicon Homebrew on this machine.
+        };
+        let Some(config) = fs::read_dir(prefix.join("etc"))
+            .ok()
+            .and_then(|entries| entries.flatten().map(|e| e.path()).find(|p| p.is_file()))
+        else {
+            return;
+        };
+        let (base, runtime) = setup();
+        let output = command(&runtime, "/bin/sh")
+            .unwrap()
+            .args([
+                "-c",
+                "head -c 1 \"$1\" >/dev/null; if head -c 1 \"$2\" >/dev/null 2>&1; then exit 50; fi; printf OK",
+                "sh",
+            ])
+            .arg(&library)
+            .arg(&config)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(output.stdout, b"OK");
         drop(runtime);
         fs::remove_dir_all(base).unwrap();
     }

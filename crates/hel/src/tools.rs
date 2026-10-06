@@ -64,6 +64,17 @@ impl Toolset {
         &self.definitions
     }
 
+    /// The built-in definitions plus `load_mcp_tool` and MCP tools loaded so far (H10).
+    pub fn request_definitions(&self, runtime: &Runtime) -> Value {
+        let mcp = runtime.mcp.definitions();
+        if mcp.is_empty() {
+            return self.definitions.clone();
+        }
+        let mut definitions = self.definitions.as_array().cloned().unwrap_or_default();
+        definitions.extend(mcp);
+        Value::Array(definitions)
+    }
+
     /// Every production invocation passes through the common permission gate.
     #[cfg(test)]
     pub fn call(
@@ -88,11 +99,37 @@ impl Toolset {
         access: Access,
         approval: &mut dyn Approval,
     ) -> Execution {
-        let tool = self
+        let builtin = self
             .tools
             .iter()
             .find(|tool| tool.name() == name)
             .map(|tool| tool.as_ref());
+        let tool = match builtin {
+            Some(tool) => Some(tool),
+            None => match runtime.mcp.lookup(name) {
+                crate::mcp::Lookup::Tool(tool) => Some(tool),
+                crate::mcp::Lookup::NotLoaded => {
+                    // Neither hooks nor the server see a call to a tool the model has not loaded.
+                    return Execution {
+                        result: Err(format!(
+                            "{name} is not loaded; call {} with this name first",
+                            crate::mcp::LOAD
+                        )),
+                        trace: permissions::Trace {
+                            name: name.to_owned(),
+                            args: args.clone(),
+                            access,
+                            action: None,
+                            decision: permissions::Decision::Deny,
+                            approval: None,
+                            executed: false,
+                            hook_blocked: false,
+                        },
+                    };
+                }
+                crate::mcp::Lookup::Unknown => None,
+            },
+        };
         let Some(known) = tool else {
             return permissions::execute(tool, name, args, runtime, access, approval);
         };
@@ -144,7 +181,7 @@ macro_rules! tool {
             }
         }
         impl Tool for $type {
-            fn name(&self) -> &'static str {
+            fn name(&self) -> &str {
                 $name
             }
             fn run(&self, runtime: &Runtime, args: &Value) -> Result<String, String> {

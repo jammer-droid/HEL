@@ -26,6 +26,7 @@
 mod api;
 mod context;
 mod hooks;
+mod mcp;
 mod output;
 mod permissions;
 mod prompt;
@@ -153,6 +154,9 @@ fn run_args(args: Args) -> Result<(), Box<dyn Error>> {
     };
     let store = sessions::Store::open(&workdir, args.resume.as_deref())?;
     let mut runtime = store.runtime()?;
+    // H10: servers start fresh in every process, so a resumed session reloads MCP tools.
+    runtime.mcp = mcp::Mcp::load(&runtime);
+    let system = runtime.mcp.extend_system(system);
     let mut restored = if args.resume.is_some() {
         store.restore(system.clone(), &config)?
     } else {
@@ -256,6 +260,7 @@ fn run_args(args: Args) -> Result<(), Box<dyn Error>> {
     if let Some(path) = &args.record {
         log.write(&ctx, started, ended, wall_time_ms, path)?;
         runtime.hooks.write_trace(path)?;
+        runtime.mcp.write_trace(path)?;
     }
     Ok(())
 }
@@ -366,6 +371,8 @@ fn run_loop(
         approval,
     } = session;
     for _ in 0..max_turns {
+        // Loaded MCP tools join the definitions from the request after loading (H10).
+        let definitions = tools.request_definitions(runtime);
         if let Some(policy) = compaction {
             context::before_request(
                 messages,
@@ -373,10 +380,10 @@ fn run_loop(
                 meter,
                 log,
                 &mut runtime.skills.borrow_mut(),
-                &mut |request| client.complete(request, Some(tools.definitions())),
+                &mut |request| client.complete(request, Some(&definitions)),
             );
         }
-        let exchange = match client.complete(messages, Some(tools.definitions())) {
+        let exchange = match client.complete(messages, Some(&definitions)) {
             Ok(exchange) => exchange,
             Err(err) => {
                 log.failed(&err);

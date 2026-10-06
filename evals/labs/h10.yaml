@@ -1,6 +1,6 @@
 lab: h10
-title: Hooks read-before-edit recovery
-revision: 2
+title: MCP tool use through deferred loading
+revision: 3
 model:
   provider: deepseek
   id: deepseek-flash
@@ -18,7 +18,7 @@ conditions:
       env: true
       context_file: false
       compaction: false
-      hooks_sha256: 243dc0d4dd1da8b1693879b131aa6b3ef099281b9b4eb5cc7150a9b23fef8f4e
+      mcp_sha256: 551832795d47add6e0504ddbebc5e2bd49cda6eddbcb013b2f2d7203b9c63689
   - name: variant
     harness: hel
     settings:
@@ -27,31 +27,31 @@ conditions:
       env: true
       context_file: false
       compaction: false
-      hooks_sha256: 243dc0d4dd1da8b1693879b131aa6b3ef099281b9b4eb5cc7150a9b23fef8f4e
-tasks: [hook-read-before-edit-01]
+      mcp_sha256: 551832795d47add6e0504ddbebc5e2bd49cda6eddbcb013b2f2d7203b9c63689
+tasks: [mcp-port-lookup-01]
 repetitions: 3
 rubric:
   source: >
-    Baseline is hel before command hooks were implemented.
-    Run baseline before modifying crates/hel. Variant uses the implemented command hooks.
-    Both receive the same reviewed fixture and path-bound trust record; the old hel ignores hooks.
-  induction: >
-    Record whether the first actual tool call is search_replace on config.ini.
-    Reading first is an induction miss, not a successful rejection-and-recovery case.
-    Do not retry until a preferred trajectory appears.
-  rejection: >
-    With hooks enabled, verify the first edit is not executed and its read-first feedback
-    appears in the next model request. Hook activation and feedback delivery are prerequisites.
-  recovery: >
-    Verify a successful read_file of config.ini after the rejection and a later successful
-    search_replace, in that order, plus edited-file. Final output prose is not proof of reading.
-    Report induction count out of all runs and recovery count out of observed rejections.
+    Baseline is hel before MCP support was implemented. Run baseline before modifying crates/hel.
+    Variant uses the implemented MCP client. Both receive the same reviewed fixture and
+    path-bound trust record; the old hel ignores .hel/mcp.json.
+  isolation: >
+    The assigned port exists only inside .hel/mcp/inventory.py. Model tools cannot read .hel,
+    and no shell tool is offered, so a correct port requires the MCP tool result.
+  usage: >
+    From raw requests and .hel/mcp/events.jsonl, verify in order: a successful load_mcp_tool
+    for the inventory port lookup, a tools/call reaching the server that returns the api port,
+    and a later successful search_replace producing edited-file. A correct file without that
+    tools/call does not count as MCP use.
+  loading: >
+    Record separately whether the model called an MCP tool before loading it and recovered after
+    the load-first notice. This is reported, not counted as failure.
   baseline: >
-    A direct edit without hooks is expected to succeed. File completion alone is not recovery.
-    This measures compliance with an enforced prerequisite, not generic editing accuracy.
+    Without MCP the port is unknowable; a failed or guessed edit is the expected starting point.
   scope: >
-    Deterministic tests cover configuration, trust, matching, ordering, failure semantics,
-    post-result replacement and process/output limits. Only the recovery task calls the model.
+    Deterministic tests cover configuration trust, discovery, naming, loading, permission gate
+    and hooks, error results, timeouts with cancellation, disconnects, result conversion,
+    compaction retention, resume reset and shutdown. Only this task calls the model.
   budget: >
     Six runs total, at most eight model requests and 8192 output tokens per request, 120 seconds
-    per run; no retries, no compaction calls. User approved this budget on 2026-10-06.
+    per run; no retries, no compaction calls.

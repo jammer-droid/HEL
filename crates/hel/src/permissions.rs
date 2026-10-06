@@ -55,7 +55,7 @@ pub trait Approvable {
 
 /// The gate is the only production caller of tool execution.
 pub trait Tool: Approvable {
-    fn name(&self) -> &'static str;
+    fn name(&self) -> &str;
     fn run(&self, runtime: &Runtime, args: &Value) -> Result<String, String>;
 }
 
@@ -212,7 +212,7 @@ mod tests {
         }
     }
     impl Tool for NewTool<'_> {
-        fn name(&self) -> &'static str {
+        fn name(&self) -> &str {
             "new-tool"
         }
         fn run(&self, _: &Runtime, _: &Value) -> Result<String, String> {

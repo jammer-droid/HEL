@@ -75,11 +75,12 @@ impl Handler {
     }
 }
 
+/// A reviewed project configuration: exact bytes for one canonical project path.
 #[derive(Serialize, Deserialize)]
-struct Trust {
-    schema_version: u32,
-    project: PathBuf,
-    sha256: String,
+pub(crate) struct Trust {
+    pub schema_version: u32,
+    pub project: PathBuf,
+    pub sha256: String,
 }
 
 #[derive(Default)]
@@ -190,7 +191,7 @@ impl Hooks {
                 return Ok(());
             }
             // Trust applies to these reviewed bytes, not a later re-read of the configuration.
-            if let Err(e) = save_trust(&directory, &trust) {
+            if let Err(e) = save_trust(&directory, TRUST, &trust) {
                 self.warning("trust-save", &format!("could not save hook trust: {e}; approved hooks are active for this invocation only"));
             }
         }
@@ -364,7 +365,7 @@ fn compile(config: Config) -> Result<Vec<Handler>, String> {
     Ok(handlers)
 }
 
-fn read_plain(path: &Path) -> io::Result<Vec<u8>> {
+pub(crate) fn read_plain(path: &Path) -> io::Result<Vec<u8>> {
     let file = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
@@ -380,11 +381,11 @@ fn read_plain(path: &Path) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn save_trust(directory: &Path, trust: &Trust) -> io::Result<()> {
+pub(crate) fn save_trust(directory: &Path, name: &str, trust: &Trust) -> io::Result<()> {
     if !fs::symlink_metadata(directory)?.is_dir() {
         return Err(io::Error::other(".hel must remain a real directory"));
     }
-    let temporary = directory.join(format!(".hooks-trust-{}.tmp", uuid::Uuid::new_v4()));
+    let temporary = directory.join(format!(".{name}-{}.tmp", uuid::Uuid::new_v4()));
     let result = (|| {
         let mut file = OpenOptions::new()
             .write(true)
@@ -395,7 +396,7 @@ fn save_trust(directory: &Path, trust: &Trust) -> io::Result<()> {
         serde_json::to_writer_pretty(&mut file, trust)?;
         file.write_all(b"\n")?;
         file.sync_all()?;
-        fs::rename(&temporary, directory.join(TRUST))
+        fs::rename(&temporary, directory.join(name))
     })();
     if result.is_err() {
         let _ = fs::remove_file(&temporary);
@@ -593,7 +594,7 @@ fn run_command(
     }
 }
 
-fn nonblocking(fd: RawFd) -> io::Result<()> {
+pub(crate) fn nonblocking(fd: RawFd) -> io::Result<()> {
     // SAFETY: fd belongs to a live child pipe; fcntl changes descriptor flags only.
     let current = unsafe { libc::fcntl(fd, libc::F_GETFL) };
     if current == -1 || unsafe { libc::fcntl(fd, libc::F_SETFL, current | libc::O_NONBLOCK) } == -1

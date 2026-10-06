@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "inventory": {
+      "command": "python3",
+      "args": [".hel/mcp/inventory.py"]
+    }
+  }
+}

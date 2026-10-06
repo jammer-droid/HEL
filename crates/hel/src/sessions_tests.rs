@@ -6,7 +6,7 @@ use std::process::{Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-fn project() -> PathBuf {
+pub(crate) fn project() -> PathBuf {
     let root = std::env::temp_dir().join(format!("hel-session-test-{}", uuid::Uuid::new_v4()));
     fs::create_dir(&root).unwrap();
     root.canonicalize().unwrap()
@@ -320,7 +320,7 @@ fn process_entry() {
     }
 }
 
-fn child(root: &Path, args: &[&str], url: Option<&str>) -> Command {
+pub(crate) fn child(root: &Path, args: &[&str], url: Option<&str>) -> Command {
     let mut command = Command::new(std::env::current_exe().unwrap());
     command
         .args(["--exact", "sessions::tests::process_entry", "--nocapture"])
@@ -337,7 +337,7 @@ fn child(root: &Path, args: &[&str], url: Option<&str>) -> Command {
     command
 }
 
-fn successful(output: Output) {
+pub(crate) fn successful(output: Output) {
     assert!(
         output.status.success(),
         "stdout={} stderr={}",
@@ -376,7 +376,7 @@ fn mock_server(count: usize) -> (String, thread::JoinHandle<Vec<Value>>) {
     mock_responses((1..=count).map(|i| json!({"role":"assistant","content":format!("answer {i}"),"reasoning_content":"mock reasoning"})).collect())
 }
 
-fn mock_responses(responses: Vec<Value>) -> (String, thread::JoinHandle<Vec<Value>>) {
+pub(crate) fn mock_responses(responses: Vec<Value>) -> (String, thread::JoinHandle<Vec<Value>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     listener.set_nonblocking(true).unwrap();

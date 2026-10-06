@@ -313,3 +313,9 @@ H8의 두 조건은 같은 access=auto와 compaction 설정을 사용한다. 기
 - test 스크립트의 이력은 run별 fixture `.hel/read-guard-state.json`에 두며 `.hel/read-guard-events.jsonl`에 정책 판단을 기록한다. 실제 model 노출 tool은 read_file/search_replace로 제한하고 보호 경로의 시험 상태는 읽거나 수정할 수 없다. fixture 사본과 함께 run별로 격리·보존되며 세션 snapshot의 복원 대상이 아니다.
 - hel의 추가 hook 진단은 raw/hooks.jsonl로 보존한다. raw/permissions.jsonl의 hook_blocked=true는 권한 정책에 도달하기 전에 hook이 거절했음을 구분한다. record-v0·verdict-v0의 필드/의미는 변경하지 않는다. tool event.ok는 원래 tool 실행 성공 여부이며 Post 피드백 대체 여부와 구분한다.
 - 기존 Labs의 정의/결과/실행 경로는 변경하지 않는다. H10 Skills revision1은 보존하고 Hooks는 revision2로 분리한다.
+
+### H10 MCP 사용 측정 (eval-v11)
+
+- `mcp-port-lookup-01` 추가: 표준 라이브러리만 쓰는 stdio MCP 서버(`.hel/mcp/inventory.py`)와 `.hel/mcp.json`, 기존 포트의 `config.ini`, 기대 파일 포함. 정답 포트는 서버 코드에만 있고 model tool은 `.hel`을 읽을 수 없다. 기존 file_exact_match로 최종 상태를 확인하고, MCP 사용 순서는 raw 요청과 서버가 남기는 `.hel/mcp/events.jsonl`로 별도 판정한다.
+- hel 조건 `settings.mcp_sha256`은 사용자가 검토한 fixture의 `.hel/mcp.json` SHA-256이다. driver는 `hooks_sha256`과 같은 방식으로 복사된 설정과 대조해 일치할 때만 작업 경로의 `.hel/mcp-trust.json`을 만든다. 불일치/누락/비정상 파일은 API 호출 전에 중단한다. 설정 원본/등록한 신뢰는 raw/mcp-config.json·raw/mcp-trust.json에 보존한다. hel은 일반 신뢰 검증을 그대로 수행한다.
+- record-v0·verdict-v0 필드와 의미는 변경하지 않는다. 기존 Lab의 정의/결과/실행 경로는 바뀌지 않는다. H10 Hooks는 revision2, MCP는 revision3으로 분리한다.

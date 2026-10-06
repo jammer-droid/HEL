@@ -257,6 +257,7 @@ pub(crate) fn run_process(
     // Fail before spawning hel (and making model calls) if the requested engine is unavailable.
     let path = run_path(&job.condition.settings, &job.run_dir)?;
     prepare_hook_trust(&job.condition.settings, &job.workdir, &job.run_dir)?;
+    prepare_mcp_trust(&job.condition.settings, &job.workdir, &job.run_dir)?;
     let context_path = job.run_dir.join("context.json");
     fs::write(
         &context_path,
@@ -361,32 +362,82 @@ fn prepare_hook_trust(
     workdir: &Path,
     run_dir: &Path,
 ) -> Result<(), Box<dyn Error>> {
-    let Some(expected) = settings.get("hooks_sha256") else {
+    prepare_trust(&HOOKS, settings, workdir, run_dir)
+}
+
+/// Same contract for the reviewed `.hel/mcp.json` that starts MCP servers.
+fn prepare_mcp_trust(
+    settings: &Value,
+    workdir: &Path,
+    run_dir: &Path,
+) -> Result<(), Box<dyn Error>> {
+    prepare_trust(&MCP, settings, workdir, run_dir)
+}
+
+struct TrustedConfig {
+    setting: &'static str,
+    label: &'static str,
+    config: &'static str,
+    trust: &'static str,
+}
+
+const HOOKS: TrustedConfig = TrustedConfig {
+    setting: "hooks_sha256",
+    label: "hook",
+    config: "hooks",
+    trust: "hooks-trust",
+};
+
+const MCP: TrustedConfig = TrustedConfig {
+    setting: "mcp_sha256",
+    label: "MCP",
+    config: "mcp",
+    trust: "mcp-trust",
+};
+
+fn prepare_trust(
+    kind: &TrustedConfig,
+    settings: &Value,
+    workdir: &Path,
+    run_dir: &Path,
+) -> Result<(), Box<dyn Error>> {
+    let Some(expected) = settings.get(kind.setting) else {
         return Ok(());
     };
     let expected = expected
         .as_str()
         .filter(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
-        .ok_or("settings.hooks_sha256 must pin a reviewed hook configuration SHA-256")?;
+        .ok_or_else(|| {
+            format!(
+                "settings.{} must pin a reviewed {} configuration SHA-256",
+                kind.setting, kind.label
+            )
+        })?;
     let project = workdir.canonicalize()?;
     let directory = project.join(".hel");
-    let config_path = directory.join("hooks.json");
+    let config_path = directory.join(format!("{}.json", kind.config));
     if fs::symlink_metadata(&directory)?.file_type().is_symlink()
         || !fs::symlink_metadata(&config_path)?.is_file()
         || fs::metadata(&config_path)?.len() > 1_048_576
     {
-        return Err("hook fixture must contain a plain .hel/hooks.json of at most 1 MiB".into());
+        return Err(format!(
+            "{} fixture must contain a plain .hel/{}.json of at most 1 MiB",
+            kind.label, kind.config
+        )
+        .into());
     }
     let config = fs::read(&config_path)?;
     let digest = format!("{:x}", Sha256::digest(&config));
     if digest != expected {
-        return Err(
-            "hook fixture differs from the reviewed hooks_sha256; no run was started".into(),
-        );
+        return Err(format!(
+            "{} fixture differs from the reviewed {}; no run was started",
+            kind.label, kind.setting
+        )
+        .into());
     }
-    let trust_path = directory.join("hooks-trust.json");
+    let trust_path = directory.join(format!("{}.json", kind.trust));
     if fs::symlink_metadata(&trust_path).is_ok_and(|meta| !meta.is_file()) {
-        return Err("hook trust destination is not a plain file".into());
+        return Err(format!("{} trust destination is not a plain file", kind.label).into());
     }
     let trust = serde_json::to_vec_pretty(&serde_json::json!({
         "schema_version": 1,
@@ -395,8 +446,11 @@ fn prepare_hook_trust(
     }))?;
     fs::write(&trust_path, &trust)?;
     fs::set_permissions(&trust_path, fs::Permissions::from_mode(0o600))?;
-    fs::write(run_dir.join("raw/hooks-trust.json"), &trust)?;
-    fs::write(run_dir.join("raw/hooks-config.json"), &config)?;
+    fs::write(run_dir.join(format!("raw/{}.json", kind.trust)), &trust)?;
+    fs::write(
+        run_dir.join(format!("raw/{}-config.json", kind.config)),
+        &config,
+    )?;
     Ok(())
 }
 
@@ -480,6 +534,32 @@ mod tests {
         prepare_hook_trust(&json!({}), &project, &run).unwrap();
         assert!(!project.exists());
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn mcp_trust_pins_reviewed_config_bytes() {
+        let root = std::env::temp_dir().join(format!("evals-mcp-{}", uuid::Uuid::new_v4()));
+        let project = root.join("project");
+        let run = root.join("run");
+        fs::create_dir_all(project.join(".hel")).unwrap();
+        fs::create_dir_all(run.join("raw")).unwrap();
+        let config = b"{\"servers\":{}}\n";
+        fs::write(project.join(".hel/mcp.json"), config).unwrap();
+        let settings = json!({"mcp_sha256": format!("{:x}", Sha256::digest(config))});
+        prepare_mcp_trust(&settings, &project, &run).unwrap();
+        let trust: Value =
+            serde_json::from_slice(&fs::read(project.join(".hel/mcp-trust.json")).unwrap())
+                .unwrap();
+        assert_eq!(trust["project"], json!(project.canonicalize().unwrap()));
+        assert_eq!(trust["sha256"], settings["mcp_sha256"]);
+        assert_eq!(fs::read(run.join("raw/mcp-config.json")).unwrap(), config);
+        assert!(!project.join(".hel/hooks-trust.json").exists());
+        fs::remove_file(project.join(".hel/mcp-trust.json")).unwrap();
+        fs::write(project.join(".hel/mcp.json"), b"{\"servers\":{}}\n\n").unwrap();
+        assert!(prepare_mcp_trust(&settings, &project, &run).is_err());
+        assert!(!project.join(".hel/mcp-trust.json").exists());
+        assert!(prepare_mcp_trust(&json!({"mcp_sha256": "x"}), &project, &run).is_err());
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
