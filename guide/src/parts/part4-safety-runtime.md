@@ -12,7 +12,7 @@
 flowchart TB
     U[사용자 지시] --> L
     subgraph H[hel]
-        P[system prompt · HEL.md]
+        P[시스템 프롬프트 · HEL.md]
         L[agent loop]
         C[context 측정 · 압축]
         T[tool 실행]
@@ -30,7 +30,7 @@ flowchart TB
     T <--> W[(작업 디렉터리)]
 ```
 
-- harness는 환경 정보, 저장소 규칙, tool 정의와 대화 기록을 model에게 보낸다. 압축한 구간은 요약으로 바뀐다.
+- harness는 시스템 프롬프트, 사용 가능한 tool 목록과 대화 기록을 model에게 보낸다. 시스템 프롬프트에는 OS·shell·작업 경로와 저장소 규칙이 들어간다. 압축한 구간은 요약으로 바뀐다.
 - `hel`이 제공하는 전용 tool은 작업 디렉터리 경계를 검사한다. bash는 같은 디렉터리에서 시작하지만 밖으로 이동하거나 다른 경로에 접근할 수 있다.
 - tool을 실행하기 전에 사용자 승인을 받는 단계는 없다.
 

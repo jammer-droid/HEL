@@ -106,12 +106,12 @@ model을 호출하기 전마다 지금 context를 추정한다. 마지막 응답
 `prompt_tokens`는 직전에 보낸 요청의 input 크기다. 그 요청에 대한 model의 응답과, 그 응답을 보고 `hel`이 실행한 tool의 결과는 그 뒤에 생겨서 아직 한 번도 보낸 적이 없으므로 token 수를 모른다. 이렇게 새로 붙은 메시지만 글자 수로 어림해 더한다.
 
 ```text
-① 요청 1 보냄:   [system·tool 정의] [user: alpha 읽어라]
+① 요청 1 보냄:   [system·사용 가능한 tool 목록] [user: alpha 읽어라]
                  └─────────── 445 token ───────────┘   ← 응답 1의 prompt_tokens
 ② 응답 1:       assistant: cat services/alpha.toml (tool 호출)
 ③ tool 실행:    tool 결과 = alpha 파일 내용
 
-④ 요청 2 직전:   [system·tool 정의] [user] [assistant: tool 호출] [tool: 파일 내용]
+④ 요청 2 직전:   [system·사용 가능한 tool 목록] [user] [assistant: tool 호출] [tool: 파일 내용]
                  └─── 445 (알고 있음) ───┘ └──── ②+③ 6,665글자 ÷ 4 ≈ 1,667 ────┘
                  추정 2,112 token  (실제로 보낸 요청 2는 1,916 token)
 ```
@@ -176,11 +176,11 @@ model이 tool을 부르면 assistant 메시지에 호출마다 `id`가 붙고, `
 - 11에서 나누면 1~10이 요약으로 바뀌고 원문에는 `call_C 결과`만 남는다. 그 결과를 만든 10번 호출이 요약 속으로 사라져, model과 API가 보기에는 하지 않은 호출의 결과가 들어온 셈이 되고 요청 형식이 깨진다.
 - 10에서 나누면 1~9가 요약이 되고 원문에는 10번 호출과 11번 결과가 함께 남는다.
 
-**② 요약 요청 보내기.** `summary_request`는 요약할 구간을 다시 쓰지 않고 대화에 있던 그대로 보내고, 마지막에 요약 지시를 user 메시지로 붙인다. tool 정의도 대화 요청과 같게 넣는다. 그래서 요약 요청의 앞부분은 직전 대화 요청과 같고, input 3,720 token 중 3,456 token이 cache hit에 성공했다.
+**② 요약 요청 보내기.** `summary_request`는 요약할 구간을 다시 쓰지 않고 대화에 있던 그대로 보내고, 마지막에 요약 지시를 user 메시지로 붙인다. 사용 가능한 tool 목록도 대화 요청과 같게 넣는다. 그래서 요약 요청의 앞부분은 직전 대화 요청과 같고, input 3,720 token 중 3,456 token이 cache hit에 성공했다.
 
 ```text
-직전 대화 요청:  [system·tool 정의] [user: alpha] ... [user: charlie]
-요약 요청:      [system·tool 정의] [user: alpha] ... [user: charlie] [user: 요약 지시]
+직전 대화 요청:  [system·사용 가능한 tool 목록] [user: alpha] ... [user: charlie]
+요약 요청:      [system·사용 가능한 tool 목록] [user: alpha] ... [user: charlie] [user: 요약 지시]
 ```
 
 요약의 형식은 `hel`이 이 지시문으로 정해 준다. DeepSeek Harness의 지시를 줄여 쓴 것으로, 절 제목과 규칙을 적어 두었다.
@@ -246,7 +246,7 @@ acknowledging this checkpoint.
 | 3 | assistant: `cat services/charlie.toml` 호출 | |
 | 4 | tool: charlie 파일 내용 | 6,085 |
 
-model은 이 요청을 받고 `7530`으로 답했다. 요청 6의 input은 2,415 token이었고, cache hit는 system과 tool 정의에 해당하는 384 token뿐이었다. 2번 메시지부터는 처음 보내는 내용이기 때문이다. 다음 요청부터는 이 요청 뒤에 대화가 덧붙으므로 다시 cache hit에 성공한다(§3).
+model은 이 요청을 받고 `7530`으로 답했다. 요청 6의 input은 2,415 token이었고, cache hit는 system과 사용 가능한 tool 목록에 해당하는 384 token뿐이었다. 2번 메시지부터는 처음 보내는 내용이기 때문이다. 다음 요청부터는 이 요청 뒤에 대화가 덧붙으므로 다시 cache hit에 성공한다(§3).
 
 요약 요청은 raw log에 `purpose: compaction`으로 남는다. 실행 기록의 비용(input, output, cache hit)에는 들어가지만 context 크기(`peak_context_tokens`, `last_context_tokens`)에는 들어가지 않는다. 요약 요청의 input(3,720)은 대화 요청 중 가장 컸던 요청 5(3,514)보다 크지만, 대화가 window를 얼마나 차지했는지와는 다른 값이기 때문이다.
 
@@ -301,7 +301,7 @@ xychart-beta
     bar [446, 1925, 1998, 3467, 3497, 2512, 2535, 2625, 2758, 2807]
 ```
 
-- 압축 직후 요청의 cache hit는 384 token(14~15%)이었다. 앞부분 중 system prompt와 tool 정의만 그대로이고, 요약과 남긴 최근 구간은 처음 보내는 내용이기 때문이다.
+- 압축 직후 요청의 cache hit는 384 token(14~15%)이었다. 앞부분 중 시스템 프롬프트와 사용 가능한 tool 목록만 그대로이고, 요약과 남긴 최근 구간은 처음 보내는 내용이기 때문이다.
 - 바로 다음 요청에서 hit 비율이 89~94%로 돌아왔다. 압축 뒤에는 다시 뒤에 덧붙이기만 하므로, 직전 요청까지의 앞부분이 그대로 cache hit에 성공한다. 9번 요청의 평균이 39%인 것은 세 번째 실행에서 두 번째 압축이 일어나지 않았기 때문이다(그 실행은 delta 파일을 `sed -n '1,20p'`로 앞 20줄만 읽었다).
 - 요약 요청 자체는 92~94%(두 번째 요약 요청은 89~90%)가 cache hit였다. 요약할 대화가 직전 요청의 앞부분과 같기 때문이다.
 - context는 압축 뒤 2,400~2,600 token에서 다시 쌓였다. 파일 전체를 읽은 실행끼리 비교하면 가장 컸던 context가 약 6,500에서 3,500 token으로 줄었다.
@@ -349,7 +349,7 @@ xychart-beta
 
 압축은 model을 한 번 더 부르는 일이다. 이번 세션에서 요약 한 번의 출력은 480~768 token이었고, 압축 직후 요청은 요약과 최근 구간 전체를 다시 계산했다. 자주 압축하면 이 비용 역시 함께 고려를 해야한다. 기본 기준(800K)에서는 지금까지의 작업 규모에서 압축이 일어나지 않으므로, 실제 window 근처에서 압축이 얼마나 자주 일어나고 얼마를 아끼는지는 측정할 수 없었다.
 
-요약의 내용은 model이 정한다. 이번 요약에는 필요한 port와 owner가 모두 남았지만, system prompt에 있던 작업 디렉터리 경로와 shell 정보도 다시 적혀 같은 내용이 두 번 들어갔다. 크기 추정은 글자 수를 4로 나누는 방식이라 한국어처럼 글자당 token이 많은 내용은 적게 추정한다. DeepSeek Harness도 같은 한계를 문서에 적어 두었다.
+요약의 내용은 model이 정한다. 이번 요약에는 필요한 port와 owner가 모두 남았지만, 시스템 프롬프트에 있던 작업 디렉터리 경로와 shell 정보도 다시 적혀 같은 내용이 두 번 들어갔다. 크기 추정은 글자 수를 4로 나누는 방식이라 한국어처럼 글자당 token이 많은 내용은 적게 추정한다. DeepSeek Harness도 같은 한계를 문서에 적어 두었다.
 
 ### 논문의 내용 또는 다른 harness와 비교하면
 

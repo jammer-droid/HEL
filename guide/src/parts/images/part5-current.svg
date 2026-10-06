@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="286" viewBox="0 0 760 286" role="img" aria-labelledby="title desc">
+<title id="title">현재 hel의 실행 기반</title><desc id="desc">기존 기능을 작업 수행, 문맥·세션 관리, 실행 경계로 묶은 구조.</desc>
+<style>text{font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;fill:#26323b;font-size:19px} .heading{font-size:23px;font-weight:600}.small{font-size:16px;fill:#52616c}.old{fill:#edf0f2}.new{fill:#fff1d6;stroke:#d5ab66;stroke-dasharray:5 4}.line{fill:none;stroke:#7b8790;stroke-width:1.5}.bar{fill:#ffe1a6}</style>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M1 1L9 5L1 9" fill="none" stroke="#7b8790" stroke-width="1.5"/></marker></defs>
+<rect width="760" height="286" rx="12" fill="#ffffff"/>
+<text x="380" y="37" text-anchor="middle" class="heading">agent 실행 기반 · H0–H9</text>
+<rect x="24" y="66" width="712" height="196" rx="9" class="old"/>
+<text x="380" y="98" text-anchor="middle" class="heading">작업 수행</text>
+<text x="380" y="126" text-anchor="middle" class="">model 호출 · tool 실행</text>
+<text x="205" y="176" text-anchor="middle" class="">문맥·세션 관리</text>
+<text x="205" y="204" text-anchor="middle" class="small">대화 압축 · 저장·복원</text>
+<text x="562" y="176" text-anchor="middle" class="">실행 경계</text>
+<text x="562" y="204" text-anchor="middle" class="small">권한 판단 · 파일 접근 격리</text>
+<text x="380" y="242" text-anchor="middle" class="small">시스템 프롬프트 · 사용 가능한 tool 목록 · 대화 기록</text>
+</svg>

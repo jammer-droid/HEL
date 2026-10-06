@@ -219,6 +219,7 @@ pub fn before_request(
     policy: &Policy,
     meter: &mut Meter,
     log: &mut RunLog,
+    skills: &mut crate::skills::Skills,
     summarize: &mut dyn FnMut(&[Value]) -> Result<Exchange, ApiError>,
 ) {
     let before = meter.estimate(messages);
@@ -235,11 +236,13 @@ pub fn before_request(
         }
     }
 
-    let first = first_compactable(messages);
-    let Some(tail) = tail_start(messages, first, policy.keep_recent) else {
+    // The separately retained skill region is not part of the recent-history allowance.
+    let history = skills.without_preserved(messages);
+    let first = first_compactable(&history);
+    let Some(tail) = tail_start(&history, first, policy.keep_recent) else {
         return;
     };
-    let request = summary_request(messages, tail);
+    let request = summary_request(&history, tail);
     let exchange = match summarize(&request) {
         Ok(exchange) => exchange,
         Err(err) => {
@@ -258,14 +261,23 @@ pub fn before_request(
         }
     };
     let replacement = checkpoint(&summary);
-    let region = &messages[first..tail];
-    if estimate(std::slice::from_ref(&replacement)) >= estimate(region) {
+    let mut candidate = history[..first].to_vec();
+    candidate.push(replacement);
+    candidate.extend_from_slice(&history[tail..]);
+    let available = policy.at.saturating_sub(estimate(&candidate));
+    let preserved = skills.preservation(available);
+    if let Some(region) = &preserved {
+        candidate.insert(first + 1, region.message.clone());
+    }
+    if estimate(&candidate) >= estimate(messages) {
         log.compaction_note("summary is not smaller than the span it replaces");
         eprintln!("[compaction] skipped: summary is not smaller than the span");
         return;
     }
     let replaced = tail - first;
-    messages.splice(first..tail, [replacement]);
+    *messages = candidate;
+    skills.set_preserved(preserved);
+    skills.reconcile(messages);
     meter.reset();
     eprintln!(
         "[compaction] {replaced} messages → summary: ~{before} → ~{} tokens",
@@ -426,6 +438,7 @@ mod tests {
             },
             &mut meter,
             &mut log,
+            &mut crate::skills::Skills::default(),
             &mut |request| {
                 seen.push(request.to_vec());
                 Ok(reply(
@@ -458,6 +471,7 @@ mod tests {
             },
             &mut meter,
             &mut log,
+            &mut crate::skills::Skills::default(),
             &mut |_| {
                 calls += 1;
                 Err(ApiError::Http("unused".into()))
@@ -473,6 +487,7 @@ mod tests {
             },
             &mut meter,
             &mut log,
+            &mut crate::skills::Skills::default(),
             &mut |_| {
                 Ok(reply(
                     json!({ "role": "assistant", "content": "", "tool_calls": [{ "id": "x" }] }),

@@ -114,7 +114,7 @@ Codex의 resume 테스트는 고정된 model 응답으로 대화를 만든 뒤 �
 
 **Claude Code.** 공식 문서는 메시지·tool 사용·결과를 로컬 JSONL에 보관하고, `--resume`으로 지정한 세션에 후속 대화를 추가한다고 설명한다. 세션 재개와 파일 복구는 별도의 기능이다. Agent SDK가 읽어 주는 대화도 압축이 있었다면 요약을 포함한 현재 메시지 연결이며, 저장소의 모든 원본 항목과 같지 않을 수 있다. [세션 설명](https://code.claude.com/docs/en/agent-sdk/sessions), [압축 뒤 메시지 읽기](https://code.claude.com/docs/en/agent-sdk/session-storage#getsessionmessages-returns-the-post-compaction-chain)
 
-두 시스템 모두 과거 대화와 재개 시점의 실행 설정을 따로 다룬다. Codex는 작업 경로가 달라지면 사용할 경로를 선택하고 model·sandbox 설정을 바꿔 재개할 수 있다. Claude Code도 설정 파일을 다시 읽으며, 복원되는 model·권한 상태에는 조건이 있다. 현재 기본 설정에서는 기록된 system prompt를 압축 전까지 재사용하지만, 이를 다시 구성하는 옵션도 제공한다. hel에서도 대화 복원과 현재 작업 경로·권한 설정의 관계를 정해야 한다. [Codex resume](https://learn.chatgpt.com/docs/developer-commands?surface=cli#codex-resume), [Claude 재개 범위](https://code.claude.com/docs/en/sessions#what-a-resumed-session-restores), [system prompt](https://code.claude.com/docs/en/cli-reference#system-prompt-flags-in-resumed-conversations)
+두 시스템 모두 과거 대화와 재개 시점의 실행 설정을 따로 다룬다. Codex는 작업 경로가 달라지면 사용할 경로를 선택하고 model·sandbox 설정을 바꿔 재개할 수 있다. Claude Code도 설정 파일을 다시 읽으며, 복원되는 model·권한 상태에는 조건이 있다. 현재 기본 설정에서는 기록된 시스템 프롬프트를 압축 전까지 재사용하지만, 이를 다시 구성하는 옵션도 제공한다. hel에서도 대화 복원과 현재 작업 경로·권한 설정의 관계를 정해야 한다. [Codex resume](https://learn.chatgpt.com/docs/developer-commands?surface=cli#codex-resume), [Claude 재개 범위](https://code.claude.com/docs/en/sessions#what-a-resumed-session-restores), [시스템 프롬프트](https://code.claude.com/docs/en/cli-reference#system-prompt-flags-in-resumed-conversations)
 
 > 자료 확인은 2026-10-05 기준이다.
 
@@ -123,7 +123,7 @@ Codex의 resume 테스트는 고정된 model 응답으로 대화를 만든 뒤 �
 
 ### 현재 데이터와 model 요청
 
-현재 hel에서 대화와 실행 상태는 다음과 같이 나뉜다. 메모리의 `messages`는 JSON 메시지 객체의 배열이고, 요청 설정과 tool 정의를 합쳐 API 요청을 만든다.
+현재 hel에서 대화와 실행 상태는 다음과 같이 나뉜다. 메모리의 `messages`는 JSON 메시지 객체의 배열이고, 요청 설정과 사용 가능한 tool 목록을 합쳐 API 요청을 만든다.
 
 ```mermaid
 flowchart TB
@@ -176,7 +176,7 @@ flowchart TB
         BM["복원된 messages<br/>새 메시지 추가"]
         BC["압축 상태 복원<br/>현재 설정·system 적용"]
         NEW["새 사용자 메시지"]
-        NEXT["재개 후 첫 API 요청 구성"]
+        NEXT["재개 후 첫 model 입력 준비"]
         NEW --> BM
         LOAD -->|messages| BM
         LOAD -->|request_config 등| BC
@@ -205,7 +205,7 @@ cursor도 snapshot에 저장하고 같은 세션을 재개할 때 복원한다. 
 
 model·tool 구성·요청 params·출력 한도도 재개 시점의 실행 설정을 적용한다. 저장된 설정은 이전 실행과 비교할 자료로 남긴다. 설정과 작업 환경이 그대로이고 필요한 상태가 복원되면, 종료 전과 같은 문맥과 동작 조건으로 이어갈 수 있다.
 
-Meter는 저장된 대화·system 메시지·model·tool 정의가 같으면 복원한다. 입력 토큰 수에 영향을 주는 이 조건들이 바뀌면 기존 관측값을 초기화하고 전체 메시지로 임시 추정한다. 다음 API 응답을 받으면 실제 입력 토큰 수로 갱신한다. 출력 한도나 압축 기준만 바뀌었다면 관측값은 유지하고 새 압축 기준을 적용한다.
+Meter는 저장된 대화·system 메시지·model·사용 가능한 tool 목록이 같으면 복원한다. 입력 토큰 수에 영향을 주는 이 조건들이 바뀌면 기존 관측값을 초기화하고 전체 메시지로 임시 추정한다. 다음 API 응답을 받으면 실제 입력 토큰 수로 갱신한다. 출력 한도나 압축 기준만 바뀌었다면 관측값은 유지하고 새 압축 기준을 적용한다.
 
 한 세션은 한 hel 인스턴스만 사용하도록 점유를 확인한다. 다른 인스턴스가 이미 사용 중인 세션의 재개는 거절한다. 두 인스턴스가 같은 snapshot을 서로 덮어쓰는 일을 막기 위해서다. 서로 다른 세션은 동시에 사용할 수 있다.
 
@@ -222,7 +222,7 @@ Meter는 저장된 대화·system 메시지·model·tool 정의가 같으면 복
 
 ### JSON 메시지와 snapshot 파일
 
-현재 메시지 배열을 세션 metadata와 함께 하나의 JSON 문서로 저장하는 방식이 snapshot이다. 다음은 저장 파일에서 메시지와 요청 설정의 주요 필드를 발췌한 예시다. 실제 파일에는 생성·갱신 시각, tool 정의, Meter 관측값과 cursor 상태도 포함한다.
+현재 메시지 배열을 세션 metadata와 함께 하나의 JSON 문서로 저장하는 방식이 snapshot이다. 다음은 저장 파일에서 메시지와 요청 설정의 주요 필드를 발췌한 예시다. 실제 파일에는 생성·갱신 시각, 사용 가능한 tool 목록, Meter 관측값과 cursor 상태도 포함한다.
 
 ```json
 {
@@ -248,7 +248,7 @@ Meter는 저장된 대화·system 메시지·model·tool 정의가 같으면 복
 
 snapshot을 사용하는 경우, 저장 시점의 메시지 배열과 관련 상태를 JSON으로 직렬화한다. 직렬화는 메모리의 데이터를 파일에 쓸 수 있는 형식으로 바꾸는 과정이다. 새 hel 인스턴스는 재개할 세션을 선택하고 파일을 읽은 뒤, JSON을 해석해 메모리의 메시지 배열과 설정을 구성한다.
 
-복원된 배열의 system 메시지를 현재 환경으로 교체하고 새 사용자 지시를 추가하면 기존 loop로 대화를 이어갈 수 있다. snapshot의 세션 ID·형식 버전은 hel이 사용하고, `messages`와 요청 설정은 API 요청을 구성하는 데 사용한다.
+복원된 배열의 system 메시지를 현재 환경으로 교체하고 새 사용자 지시를 추가하면 기존 loop로 대화를 이어갈 수 있다. snapshot의 세션 ID·형식 버전은 hel이 사용하고, `messages`와 요청 설정은 model 입력 준비에 사용한다.
 
 저장 파일은 임시 파일에 완성본을 쓴 뒤 교체하는 방식으로 갱신할 수 있다. 사용자 지시에 대한 최종 답변이 끝나면 변경된 대화 상태를 snapshot에 반영하고 다음 입력을 기다린다. 저장에 실패하면 경고를 표시하고 메모리의 대화는 유지한 채 다음 지시를 받는다. 다음 답변이 완료되면 최신 대화 전체의 저장을 다시 시도한다. 실패한 쓰기로 이전 snapshot을 훼손하지 않도록 하며, 저장이 계속 실패한 채 종료하면 마지막으로 저장에 성공한 지점까지만 재개할 수 있다. 한 번도 저장하지 못했다면 재개할 snapshot이 없다.
 
@@ -359,7 +359,7 @@ lease
 | 정상 답변 후 종료·새 프로세스에서 재개 | 첫 지시와 assistant 메시지가 후속 요청에 그대로 포함 |
 | 압축 요약과 tool 호출·결과를 저장해 재개 | 메시지 순서·reasoning 내용·tool_call_id 연결 유지 |
 | 재개 전에 HEL.md 변경 | 현재 system 메시지 적용, 이전 대화는 보존 |
-| model·tool 정의·system 변경 | Meter 초기화. 출력 한도·압축 기준만 변경하면 관측값 유지 |
+| model·사용 가능한 tool 목록·system 변경 | Meter 초기화. 출력 한도·압축 기준만 변경하면 관측값 유지 |
 | 저장한 cursor로 새 프로세스에서 spill 읽기 | 같은 cursor로 이어 읽기. 대상 파일이 바뀌면 거절 |
 | 다른 세션의 spill·snapshot 접근, 내부 파일 수정 | 파일 tool·sandbox에서 거절. 일반 검색에서도 제외 |
 | 같은 세션 점유 중 재개·삭제, 자식만 살아 있는 경우 | 거절. 서로 다른 새 세션은 동시에 생성 가능 |

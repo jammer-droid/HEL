@@ -46,4 +46,4 @@ flowchart TB
 
 - `hel`이 앞으로 만들어 갈 harness의 이름이다.
 - harness는 model이 요청한 tool을 실행하고, 결과를 대화에 붙여 model을 다시 부른다. model이 tool 호출 없이 답하면 loop가 끝난다.
-- model이 받는 것은 사용자 지시, tool 정의, 대화 기록뿐이다. 어떤 OS에서 실행되는지, 작업 디렉터리가 어디인지, 그 저장소에 어떤 규칙이 있는지는 model이 tool을 호출해서 알아내야 한다. 이 문제는 [Part II](part2-repository-intelligence.md)에서 다룬다.
+- model이 받는 것은 사용자 지시, 사용 가능한 tool 목록, 대화 기록뿐이다. 어떤 OS에서 실행되는지, 작업 디렉터리가 어디인지, 그 저장소에 어떤 규칙이 있는지는 model이 tool을 호출해서 알아내야 한다. 이 문제는 [Part II](part2-repository-intelligence.md)에서 다룬다.

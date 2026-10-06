@@ -50,7 +50,7 @@ bash만 있는 `hel`에 `write_file`을 더하고, 이어서 `search_replace`를
 
 ### 참고 자료
 
-- [Mini-SWE-Agent](https://github.com/SWE-agent/mini-swe-agent/tree/04d809ceab9df28f9adaed044884180159172930)에는 편집 전용 코드가 없다. 시스템 prompt에 편집 명령 예시를 넣어 가르친다. (2026-10 기준.)
+- [Mini-SWE-Agent](https://github.com/SWE-agent/mini-swe-agent/tree/04d809ceab9df28f9adaed044884180159172930)에는 편집 전용 코드가 없다. 시스템 프롬프트에 편집 명령 예시를 넣어 가르친다. (2026-10 기준.)
   - 새 파일은 `cat <<'EOF' > newfile.py`, 고치기는 `sed -i 's/old/new/g'`과 줄 번호·줄 범위를 지정한 `sed` 예시, 보기는 `nl -ba file | sed -n '10,20p'`.
   - macOS에서는 `sed -i ''`를 써야 한다는 안내를 prompt에 넣는다. macOS의 `sed`는 Linux의 `sed`와 `-i` 옵션 사용법이 다르다.
 - Claude Code([Tools reference](https://code.claude.com/docs/en/tools-reference), 2026-10 기준)는 부분 수정에 Edit, 새로 만들거나 전체를 다시 쓸 때 Write를 쓴다.
@@ -217,7 +217,7 @@ output token은 문자열 치환을 준 구성이 두 task 모두 가장 적었�
 | | 문자열 치환 추가 | 909, 1222, 531 |
 
 - 시작 상태에서 output token이 컸던 실행(1955, 2102)은 python 스크립트를 길게 쓰거나 `sed` 실패 뒤 다시 고친 실행이다. 문자열 치환을 쓰면 이런 긴 편집 명령이 사라져서 위쪽 값이 낮아졌다. 짧게 끝난 실행끼리는 차이가 거의 없다.
-- input token은 줄지 않았다(6110 → 6422, 7806 → 8218). tool이 셋으로 늘어 요청마다 tool 정의가 길어졌고, 확인용 bash 호출 수가 비슷해서 대화 길이도 비슷했다.
+- input token은 줄지 않았다(6110 → 6422, 7806 → 8218). tool이 셋으로 늘어 요청마다 사용 가능한 tool 목록이 길어졌고, 확인용 bash 호출 수가 비슷해서 대화 길이도 비슷했다.
 
 작업 디렉터리 밖에 접근한 실행 수는 이렇다. 실행 기록의 명령에 `/tmp`나 `/` 같은 작업 디렉터리 밖 경로가 나오는지로 셌다.
 
@@ -261,7 +261,7 @@ macOS 환경에서 생긴 bash 명령 실패도 있었다. macOS의 `cat`에는 
 
 ### 트레이드오프
 
-- input token은 새로운 tool에 대한 설명으로 늘어났다(6110 → 6422, 7806 → 8218). tool 정의가 길어진 만큼 매 호출에 붙고, 편집 전후의 확인 단계는 bash로 그대로 한다. output token은 줄었지만 실행마다 차이가 커서 지금 규모로는 의미 있는 차이로 보기 어렵다.
+- input token은 새로운 tool에 대한 설명으로 늘어났다(6110 → 6422, 7806 → 8218). 사용 가능한 tool 목록이 길어진 만큼 매 호출에 붙고, 편집 전후의 확인 단계는 bash로 그대로 한다. output token은 줄었지만 실행마다 차이가 커서 지금 규모로는 의미 있는 차이로 보기 어렵다.
 - `search_replace`는 공백이나 들여쓰기가 한 글자만 달라도 일치하지 않는다. 이번에는 다섯 번 모두 첫 호출에 성공했지만, 들여쓰기가 깊은 코드 파일에서는 실패할 수 있다. 느슨하게 맞추는 방법은 [FAQ](faq.md)에 남겼다.
 - `write_file`은 기존 파일도 통째로 덮어쓴다. 읽지 않은 파일을 덮어쓰거나 다른 내용을 잃는 것을 harness가 막지 않는다. 읽은 파일만 고치게 하는 정책은 H7 Permissions와 H10 Skills / Hooks / MCP에서 다룬다.
 - bash가 함께 있는 한 작업 디렉터리 밖 접근은 남는다. 전용 tool은 밖을 거부하지만 model이 bash로 `/tmp`에 쓰는 것까지 막지는 못한다. 명령 단위의 허용 여부는 H7, 실행을 가두는 문제는 H8에서 다룬다.
@@ -272,6 +272,6 @@ macOS 환경에서 생긴 bash 명령 실패도 있었다. macOS의 `cat`에는 
 
 §16.4는 공개 model이나 약한 model에는 느슨한 매칭을 권한다. 이번에 쓴 model은 공개 model이지만 정확 매칭만으로 다섯 번 모두 첫 호출에 성공했다. 여러 섹션에 같은 줄이 있을 때도 고유한 앞줄을 붙여 넘겼다. 이번 두 task 범위에서는 Mistral Vibe가 옮겨 간 쪽인 엄격한 계약으로 충분했다.
 
-Mini-SWE-Agent는 시스템 prompt에 `sed` 예시와 macOS용 `sed -i ''` 안내를 넣는다. `hel`은 이런 안내 없이 tool 설명만 준다. model은 `sed`를 18번 중 세 번만 썼다. 그중 두 번은 macOS `sed`의 `-i` 차이로 실패한 뒤 python으로 다시 고쳤고, 한 번은 처음부터 `sed -i ''`로 썼다.
+Mini-SWE-Agent는 시스템 프롬프트에 `sed` 예시와 macOS용 `sed -i ''` 안내를 넣는다. `hel`은 이런 안내 없이 tool 설명만 준다. model은 `sed`를 18번 중 세 번만 썼다. 그중 두 번은 macOS `sed`의 `-i` 차이로 실패한 뒤 python으로 다시 고쳤고, 한 번은 처음부터 `sed -i ''`로 썼다.
 
 Claude Code는 부분 수정에 Edit, 새 파일과 전체 쓰기에 Write를 쓰게 한다. 이번 model이 두 tool을 나눠 쓴 방식과 같다. Claude Code는 여기에 읽기 전 편집 금지와 읽은 뒤 바뀐 파일 감지를 더한다. 지금의 `hel`에는 둘 다 없다.

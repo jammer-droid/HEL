@@ -51,7 +51,7 @@ struct Args {
     }
 ```
 
-`run()`에서는 client와 tool 정의를 만든 뒤 지시가 없으면 대화형 함수로 넘긴다.
+`run()`에서는 client와 사용 가능한 tool 목록을 만든 뒤 지시가 없으면 대화형 함수로 넘긴다.
 
 ```rust
     let Some(instruction) = &args.instruction else {
@@ -158,7 +158,7 @@ If you have a file in the working directory you'd like me to read or look over, 
 ```
 
 - 세 입력 모두 tool을 호출하지 않았다.
-- `hel`은 system prompt를 보내지 않는다. 그런데 "hi"에 대한 첫 답부터 파일 경로를 묻는다. model이 받은 것은 대화와 tool 정의뿐이고, 그것만 보고 자기 역할을 파일을 읽어 주는 쪽으로 잡았다.
+- `hel`은 시스템 프롬프트를 보내지 않는다. 그런데 "hi"에 대한 첫 답부터 파일 경로를 묻는다. model이 받은 것은 대화와 사용 가능한 tool 목록뿐이고, 그것만 보고 자기 역할을 파일을 읽어 주는 쪽으로 잡았다.
 - 도구 설명은 `read_file` 정의의 `description`("Read a UTF-8 text file in the working directory and return its full contents.")과 `path` 설명을 거의 그대로 옮겼다. "할 수 없는 것" 목록은 정의에 없는 내용이다. 다른 tool이 없다는 데서 model이 추론했다.
 
 ### 2. 파일 읽기
@@ -179,7 +179,7 @@ Hello, harness!
 한 줄짜리 텍스트 파일이고, 내용은 `Hello, harness!` 입니다. (참고로 `hello.txt` 같은 짧은 상대 경로로는 찾지 못했고, 알려주신 전체 경로로는 정상적으로 읽혔습니다.)
 ````
 
-- tool 정의는 상대 경로를 요구하지만 model은 받은 절대 경로를 그대로 넘겼다. 그래도 읽혔다. `read_file`은 작업 디렉터리에 경로를 이어 붙인 뒤 실제 경로로 바꿔서 작업 디렉터리 안인지 확인한다. 절대 경로를 이어 붙이면 절대 경로가 그대로 남고, 이 파일은 저장소 안에 있어서 통과했다. 저장소 밖의 절대 경로였다면 거부된다.
+- 사용 가능한 tool 목록에서 `read_file`의 인자 설명은 상대 경로를 요구하지만 model은 받은 절대 경로를 그대로 넘겼다. 그래도 읽혔다. `read_file`은 작업 디렉터리에 경로를 이어 붙인 뒤 실제 경로로 바꿔서 작업 디렉터리 안인지 확인한다. 절대 경로를 이어 붙이면 절대 경로가 그대로 남고, 이 파일은 저장소 안에 있어서 통과했다. 저장소 밖의 절대 경로였다면 거부된다.
 - 첫 호출로 이미 내용을 읽었는데 `hello.txt`로 한 번 더 시도했다. 이 호출은 작업 디렉터리(저장소 루트)에 `hello.txt`가 없어 실패했다. model은 실패도 답에 덧붙여 알렸다.
 - `[tool]` 줄은 답보다 먼저 나오지만, 실제로는 입력 하나가 끝난 뒤 한꺼번에 tool이 호출된 순서대로 출력된 것이다.
 

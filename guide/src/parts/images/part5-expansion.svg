@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="837" viewBox="0 0 760 837" role="img" aria-labelledby="title desc">
+<title id="title">Part V의 확장과 작업 분담</title><desc id="desc">H10 기능 연결, H11 별도 문맥에서의 작업 위임과 결과 반환, H12 동시 실행과 결과 통합.</desc>
+<style>text{font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;fill:#26323b;font-size:19px} .heading{font-size:23px;font-weight:600}.small{font-size:16px;fill:#52616c}.old{fill:#edf0f2}.new{fill:#fff1d6;stroke:#d5ab66;stroke-dasharray:5 4}.line{fill:none;stroke:#7b8790;stroke-width:1.5}.bar{fill:#ffe1a6}</style>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M1 1L9 5L1 9" fill="none" stroke="#7b8790" stroke-width="1.5"/></marker></defs>
+<rect width="760" height="837" rx="12" fill="#ffffff"/>
+<text x="28" y="40" text-anchor="start" class="heading">H10 · 실행 기반에 기능 연결</text>
+<rect x="28" y="64" width="224" height="68" rx="9" class="new"/>
+<text x="140" y="92" text-anchor="middle" class="">Skills</text>
+<text x="140" y="116" text-anchor="middle" class="small">작업 지침·절차</text>
+<path d="M140 134V164" class="line" marker-end="url(#arrow)"/>
+<rect x="268" y="64" width="224" height="68" rx="9" class="new"/>
+<text x="380" y="92" text-anchor="middle" class="">Hooks</text>
+<text x="380" y="116" text-anchor="middle" class="small">실행 시점의 처리</text>
+<path d="M380 134V164" class="line" marker-end="url(#arrow)"/>
+<rect x="508" y="64" width="224" height="68" rx="9" class="new"/>
+<text x="620" y="92" text-anchor="middle" class="">MCP</text>
+<text x="620" y="116" text-anchor="middle" class="small">외부 도구·자원</text>
+<path d="M620 134V164" class="line" marker-end="url(#arrow)"/>
+<rect x="28" y="166" width="704" height="80" rx="9" class="old"/>
+<text x="380" y="197" text-anchor="middle" class="">agent 실행 기반</text>
+<text x="380" y="226" text-anchor="middle" class="small">작업 수행　 /　 문맥·세션 관리　 /　 실행 경계</text>
+<text x="28" y="301" text-anchor="start" class="heading">H11 · 문맥을 나눠 작업 위임</text>
+<rect x="28" y="358" width="210" height="83" rx="9" class="old"/>
+<text x="133" y="391" text-anchor="middle" class="">부모 agent</text>
+<text x="133" y="420" text-anchor="middle" class="small">주 작업의 문맥</text>
+<rect x="522" y="358" width="210" height="83" rx="9" class="new"/>
+<text x="627" y="391" text-anchor="middle" class="">자식 agent</text>
+<text x="627" y="420" text-anchor="middle" class="small">별도 문맥</text>
+<path d="M133 358V339H627V356" class="line" marker-end="url(#arrow)"/>
+<text x="380" y="332" text-anchor="middle" class="small">작업 + 필요한 문맥</text>
+<path d="M627 443V464H133V443" class="line" marker-end="url(#arrow)"/>
+<text x="380" y="488" text-anchor="middle" class="small">결과 반환</text>
+<text x="380" y="523" text-anchor="middle" class="small">문맥 분리 ≠ 작업 파일 격리</text>
+<text x="28" y="578" text-anchor="start" class="heading">H12 · 여러 작업을 함께 실행</text>
+<path d="M116 605H730" class="line" marker-end="url(#arrow)"/>
+<text x="65" y="652" text-anchor="middle" class="">부모</text>
+<text x="65" y="709" text-anchor="middle" class="">자식 A</text>
+<text x="65" y="761" text-anchor="middle" class="">자식 B</text>
+<rect x="116" y="629" width="76" height="34" rx="9" class="old"/>
+<text x="154" y="652" text-anchor="middle" class="small">배정</text>
+<rect x="222" y="684" width="290" height="36" rx="9" class="bar"/>
+<text x="367" y="709" text-anchor="middle" class="">작업 A</text>
+<rect x="222" y="736" width="370" height="36" rx="9" class="bar"/>
+<text x="407" y="761" text-anchor="middle" class="">작업 B</text>
+<path d="M192 646H205V701H220" class="line" marker-end="url(#arrow)"/>
+<path d="M205 701V754H220" class="line" marker-end="url(#arrow)"/>
+<path d="M514 702H693V665" class="line" marker-end="url(#arrow)"/>
+<path d="M594 754H693V665" class="line" marker-end="url(#arrow)"/>
+<rect x="655" y="629" width="76" height="34" rx="9" class="new"/>
+<text x="693" y="652" text-anchor="middle" class="small">통합</text>
+<text x="380" y="813" text-anchor="middle" class="small">작업 공간 · 충돌 처리 · 결과 통합</text>
+</svg>

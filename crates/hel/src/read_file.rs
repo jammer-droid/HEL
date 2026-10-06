@@ -55,7 +55,7 @@ pub fn definition() -> Value {
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read UTF-8 text from the project or this session's spill files. start_line is 1-based and max_lines selects a range; omit both to read from the beginning. Returns at most 10000 UTF-8 bytes including any continuation notice. If truncated, call again with only the returned cursor to read the rest of the selected range, including the remainder of a long line. Cursors belong to this session and become invalid if the file changes. Do not guess cursor values.",
+            "description": "Read UTF-8 text from the project or this session's spill files. start_line is 1-based and max_lines selects a range; omit both to read from the beginning. Returns at most 10000 UTF-8 bytes including any continuation notice. If truncated, call again with only the returned cursor to read the rest of the selected range, including the remainder of a long line. Cursors belong to this session and become invalid if the file changes. Do not guess cursor values. For a registered skill, an unchanged full read may return an already-loaded notice when its full body remains in context; range reads still return the requested text.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -91,7 +91,7 @@ impl Reader {
     }
 
     pub fn read(&self, runtime: &Runtime, args: &Value) -> Result<String, String> {
-        let (mut position, file) = if let Some(cursor) = args.get("cursor") {
+        let (mut position, mut file) = if let Some(cursor) = args.get("cursor") {
             let cursor = cursor.as_str().ok_or("cursor must be a string")?;
             if args.get("start_line").is_some() || args.get("max_lines").is_some() {
                 return Err("cursor cannot be combined with start_line or max_lines".into());
@@ -128,9 +128,23 @@ impl Reader {
                 .ok_or("missing string argument: path")?;
             let start = positive(args, "start_line")?.unwrap_or(1);
             let remaining_lines = positive(args, "max_lines")?;
-            let (path, file) = runtime
-                .read_open(Path::new(path))
-                .map_err(|e| e.to_string())?;
+            let (path, file) = match runtime.read_open(Path::new(path)) {
+                Ok(opened) => opened,
+                Err(e) => {
+                    let refreshed = e.kind() == std::io::ErrorKind::NotFound
+                        && runtime
+                            .skills
+                            .borrow_mut()
+                            .missing_path(runtime, Path::new(path));
+                    return Err(if refreshed {
+                        format!(
+                            "{e}. The skill path no longer exists; the skill catalog has been refreshed. Select a current skill from the updated system message. Do not use the removed skill's cached instructions."
+                        )
+                    } else {
+                        e.to_string()
+                    });
+                }
+            };
             let identity = Identity::from(file.metadata().map_err(|e| e.to_string())?);
             let mut reader = BufReader::new(file);
             let mut offset = 0;
@@ -151,6 +165,38 @@ impl Reader {
                 reader.into_inner(),
             )
         };
+        let tracked = runtime
+            .skills
+            .borrow()
+            .tracked_path(&runtime.project, &position.path);
+        let skill = if let Some(path) = tracked {
+            match crate::skills::Document::read(&mut file) {
+                Ok(doc) => Some((path, doc)),
+                Err(e) => {
+                    eprintln!("hel: warning: {path}: {e}; excluded from skill tracking");
+                    runtime.skills.borrow_mut().invalid(&path);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        if Identity::from(file.metadata().map_err(|e| e.to_string())?) != position.identity {
+            return Err("file changed while reading; start a new read".into());
+        }
+        let whole = args.get("cursor").is_none()
+            && position.offset == 0
+            && position.remaining_lines.is_none();
+        if let Some((path, doc)) = &skill
+            && whole
+            && runtime.skills.borrow().same_visible(path, doc)
+        {
+            runtime.skills.borrow_mut().accept(path, doc);
+            return Ok(format!(
+                "Skill at {path} is already loaded in the current context."
+            ));
+        }
+        let offset = position.offset as usize;
         let (content, more, remaining_lines) =
             read_chunk(&file, &position).map_err(|e| e.to_string())?;
         if Identity::from(file.metadata().map_err(|e| e.to_string())?) != position.identity {
@@ -159,6 +205,11 @@ impl Reader {
         position.offset += content.len() as u64;
         position.remaining_lines = remaining_lines;
         if !more {
+            if let Some((path, doc)) = &skill {
+                let mut skills = runtime.skills.borrow_mut();
+                skills.accept(path, doc);
+                skills.read_range(path, doc, offset, content.len(), &content);
+            }
             return Ok(content);
         }
         let cursor = uuid::Uuid::new_v4().to_string();
@@ -171,6 +222,11 @@ impl Reader {
             "{content}\n\n[Read truncated. Continue with read_file({{\"cursor\":\"{cursor}\"}}).]\n"
         );
         debug_assert!(response.len() <= MAX_BYTES);
+        if let Some((path, doc)) = &skill {
+            let mut skills = runtime.skills.borrow_mut();
+            skills.accept(path, doc);
+            skills.read_range(path, doc, offset, content.len(), &response);
+        }
         Ok(response)
     }
 }

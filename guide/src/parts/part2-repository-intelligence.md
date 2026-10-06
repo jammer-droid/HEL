@@ -23,7 +23,7 @@ flowchart TB
     classDef new fill:#fff3bf,stroke:#e8590c,color:#000
 ```
 
-- harness는 매 호출에 사용자 지시, tool 정의, 대화 기록을 model에게 보낸다. system prompt는 없다.
+- harness는 매 호출에 사용자 지시, 사용 가능한 tool 목록, 대화 기록을 model에게 보낸다. 시스템 프롬프트는 없다.
 - 실행 환경(OS, shell, 작업 디렉터리 위치)과 저장소의 규칙은 model이 tool을 호출해서 알아내거나 추측해야 한다.
 
 ## Part I에서 드러난 문제
@@ -40,7 +40,7 @@ Part I을 마치면서 model은 harness를 통해 사용자가 원하는 작업�
 
 논문은 model이 저장소를 아는 방법을 두 갈래로 다룬다.
 
-**미리 알려 주기** (§9.7, §16.5): repository context를 다루는 시스템은 모두 AGENTS.md, CLAUDE.md 같은 Markdown 파일을 자동으로 찾아 prompt에 넣는다. 찾는 범위와 합치는 방식만 다르다. system prompt에 OS, 작업 디렉터리, git 상태를 넣는 시스템도 있다(§7.2). 논문은 이 방식을 권고로 정리한다(Recommendation 6).
+**미리 알려 주기** (§9.7, §16.5): repository context를 다루는 시스템은 모두 AGENTS.md, CLAUDE.md 같은 Markdown 파일을 자동으로 찾아 prompt에 넣는다. 찾는 범위와 합치는 방식만 다르다. 시스템 프롬프트에 OS, 작업 디렉터리, git 상태를 넣는 시스템도 있다(§7.2). 논문은 이 방식을 권고로 정리한다(Recommendation 6).
 
 **필요할 때 찾기** (§13.2, §16.5): 코드 검색에 embedding 기반 검색(RAG)을 쓰는 시스템은 조사한 11개 중 하나도 없다. 모두 ripgrep, glob, 파일 시스템 탐색을 쓰고, Aider만 tree-sitter로 symbol 지도를 만든다. 논문은 코드에는 경로와 구문 구조 같은 결정적인 정보가 있고 코드가 자주 바뀌어 미리 만든 index가 금방 낡는다는 이유로 "코드에 RAG를 만들지 말라"고 권한다(Recommendation 8).
 
@@ -48,7 +48,7 @@ Part I을 마치면서 model은 harness를 통해 사용자가 원하는 작업�
 
 | Lab | 질문 | 더하는 구조 |
 | --- | --- | --- |
-| [H3 Repository Context](../labs/h03-repository-context/README.md) | 실행 환경 정보를 system prompt로 주고, 작업 디렉터리의 `HEL.md`를 읽어 넣으면, model이 환경과 저장소 규칙을 알아내는 데 드는 호출과 실패는 어떻게 달라질까? | 환경 정보 system prompt, `HEL.md` 읽기 |
+| [H3 Repository Context](../labs/h03-repository-context/README.md) | OS·shell·작업 경로를 시스템 프롬프트로 주고, 작업 디렉터리의 `HEL.md`를 읽어 넣으면, model이 환경과 저장소 규칙을 알아내는 데 드는 호출과 실패는 어떻게 달라질까? | 시스템 프롬프트, `HEL.md` 읽기 |
 | [H4 Repository Search](../labs/h04-repository-search/README.md) | 파일명·본문 검색을 전용 tool로 제공하면 필요한 코드를 찾는 재시도와 context 사용량이 줄어드는가? | glob·grep, 경로 검사·결과 한도 |
 
 ## 이 Part를 마치면
@@ -57,7 +57,7 @@ Part I을 마치면서 model은 harness를 통해 사용자가 원하는 작업�
 flowchart TB
     U[사용자 지시] --> L
     subgraph H[hel]
-        P[system prompt<br/>OS · shell · 작업 디렉터리]:::new
+        P[시스템 프롬프트<br/>OS · shell · 작업 디렉터리]:::new
         C[HEL.md 읽기]:::new
         L[agent loop]
         T[tool<br/>bash · read_file<br/>write_file · search_replace]
@@ -75,7 +75,7 @@ flowchart TB
     classDef new fill:#fff3bf,stroke:#e8590c,color:#000
 ```
 
-- harness는 매 호출에 system prompt, 사용자 지시, tool 정의, 대화 기록을 model에게 보낸다.
+- harness는 매 호출에 시스템 프롬프트, 사용자 지시, 사용 가능한 tool 목록, 대화 기록을 model에게 보낸다.
 - model은 첫 호출부터 실행 환경을 알고, 작업 디렉터리에 `HEL.md`가 있으면 그 규칙을 함께 받는다.
 - `HEL.md`는 harness가 실행된 작업 디렉터리에서만 읽는다.
 - 검색 tool을 제공하면 model은 pattern과 path로 파일명·본문 검색을 요청할 수 있다. harness는 작업 디렉터리 경계를 검사하고, 경로와 일치 내용으로 결과를 돌려준다.

@@ -45,7 +45,13 @@ fn snapshot_preserves_json_and_restores_meter_only_when_inputs_match() {
     let mut meter = Meter::default();
     meter.observed(2, 900);
     store
-        .save(&cfg, &history, &meter, &Reader::default())
+        .save(
+            &cfg,
+            &history,
+            &meter,
+            &Reader::default(),
+            &Skills::default(),
+        )
         .unwrap();
     let id = store.id.clone();
     drop(store);
@@ -109,6 +115,7 @@ fn snapshots_reject_unknown_schema_bad_tool_links_and_symlinks() {
             &messages(),
             &Meter::default(),
             &Reader::default(),
+            &Skills::default(),
         )
         .unwrap();
     let path = store.root.join(SNAPSHOT);
@@ -133,7 +140,8 @@ fn snapshots_reject_unknown_schema_bad_tool_links_and_symlinks() {
                 &config(),
                 &bad_history,
                 &Meter::default(),
-                &Reader::default()
+                &Reader::default(),
+                &Skills::default()
             )
             .is_err()
     );
@@ -182,7 +190,13 @@ fn spill_and_cursor_survive_exit_until_session_deletion() {
         .unwrap()
         .to_string();
     store
-        .save(&config(), &messages(), &Meter::default(), &runtime.reader)
+        .save(
+            &config(),
+            &messages(),
+            &Meter::default(),
+            &runtime.reader,
+            &runtime.skills.borrow(),
+        )
         .unwrap();
     let id = store.id.clone();
     let run_store = runtime.store.clone();
@@ -237,7 +251,13 @@ fn failed_save_keeps_previous_snapshot_and_next_completed_turn_retries() {
     let store = Store::open(&root, None).unwrap();
     let mut history = messages();
     store
-        .save(&config(), &history, &Meter::default(), &Reader::default())
+        .save(
+            &config(),
+            &history,
+            &Meter::default(),
+            &Reader::default(),
+            &Skills::default(),
+        )
         .unwrap();
     let before = fs::read(store.root.join(SNAPSHOT)).unwrap();
     let moved = store.root.with_extension("temporarily-unavailable");
@@ -252,6 +272,7 @@ fn failed_save_keeps_previous_snapshot_and_next_completed_turn_retries() {
         &history,
         &Meter::default(),
         &Reader::default(),
+        &Skills::default(),
         &log
     ));
     assert_eq!(fs::read(moved.join(SNAPSHOT)).unwrap(), before);
@@ -264,6 +285,7 @@ fn failed_save_keeps_previous_snapshot_and_next_completed_turn_retries() {
         &history,
         &Meter::default(),
         &Reader::default(),
+        &Skills::default(),
         &log
     ));
     assert_eq!(read_snapshot(&store.root).unwrap().messages, history);
@@ -274,6 +296,7 @@ fn failed_save_keeps_previous_snapshot_and_next_completed_turn_retries() {
         &messages(),
         &Meter::default(),
         &Reader::default(),
+        &Skills::default(),
         &log
     ));
     assert_eq!(read_snapshot(&store.root).unwrap().messages, history);
@@ -324,6 +347,8 @@ fn successful(output: Output) {
 }
 
 fn read_request(stream: &mut TcpStream) -> Value {
+    // Accepted sockets can inherit the listener's nonblocking mode on macOS.
+    stream.set_nonblocking(false).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();
@@ -444,7 +469,13 @@ fn separate_process_restores_compacted_history_and_tool_connections_in_first_req
         json!({"role":"assistant","content":"completed"}),
     ];
     store
-        .save(&config(), &history, &Meter::default(), &Reader::default())
+        .save(
+            &config(),
+            &history,
+            &Meter::default(),
+            &Reader::default(),
+            &Skills::default(),
+        )
         .unwrap();
     let id = store.id.clone();
     drop(store);
@@ -482,6 +513,7 @@ fn occupied_session_refuses_resume_and_delete_in_another_process() {
             &messages(),
             &Meter::default(),
             &Reader::default(),
+            &Skills::default(),
         )
         .unwrap();
     for args in [
@@ -511,6 +543,7 @@ fn native_tools_cannot_modify_sessions_or_read_peers_and_children_keep_lease() {
             &messages(),
             &Meter::default(),
             &Reader::default(),
+            &Skills::default(),
         )
         .unwrap();
     let peer = Store::open(&root, None).unwrap();
@@ -590,7 +623,13 @@ fn resumed_process_uses_the_same_cursor_to_read_session_spill() {
         .unwrap()
         .to_string();
     store
-        .save(&config(), &messages(), &Meter::default(), &runtime.reader)
+        .save(
+            &config(),
+            &messages(),
+            &Meter::default(),
+            &runtime.reader,
+            &runtime.skills.borrow(),
+        )
         .unwrap();
     let id = store.id.clone();
     drop(runtime);
@@ -663,6 +702,7 @@ fn simultaneous_new_sessions_are_independent_and_git_ignores_the_store() {
                 &messages(),
                 &Meter::default(),
                 &Reader::default(),
+                &Skills::default(),
             )
             .unwrap();
         successful(
@@ -675,5 +715,123 @@ fn simultaneous_new_sessions_are_independent_and_git_ignores_the_store() {
         );
     }
     drop(stores);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn actual_cli_skill_snapshot_is_lazy_and_reread_updates_metadata_and_body() {
+    let root = project();
+    fs::create_dir_all(root.join(".agents/skills/review")).unwrap();
+    let path = ".agents/skills/review/SKILL.md";
+    fs::write(
+        root.join(path),
+        "---\nname: review\ndescription: Old description\n---\nRULE_V1",
+    )
+    .unwrap();
+    let call = |id: &str| json!({"role":"assistant","content":null,"tool_calls":[{"id":id,"type":"function","function":{"name":"read_file","arguments":json!({"path":path}).to_string()}}]});
+    let (url, server) = mock_responses(vec![
+        call("initial"),
+        call("duplicate"),
+        json!({"role":"assistant","content":"first done"}),
+        call("changed"),
+        json!({"role":"assistant","content":"resumed done"}),
+        call("same"),
+        json!({"role":"assistant","content":"third done"}),
+    ]);
+    successful(
+        child(
+            &root,
+            &["--tools", "read_file", "--instruction", "review"],
+            Some(&url),
+        )
+        .output()
+        .unwrap(),
+    );
+    let dir = fs::read_dir(root.join(".hel/sessions"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let id = dir.file_name().unwrap().to_str().unwrap();
+    fs::write(
+        root.join(path),
+        "---\nname: code-review\ndescription: New description\n---\nRULE_V2",
+    )
+    .unwrap();
+    for _ in 0..2 {
+        successful(
+            child(
+                &root,
+                &[
+                    "--tools",
+                    "read_file",
+                    "--resume",
+                    id,
+                    "--instruction",
+                    "continue",
+                ],
+                Some(&url),
+            )
+            .output()
+            .unwrap(),
+        );
+    }
+    let requests = server.join().unwrap();
+    let system = |i: usize| requests[i]["messages"][0]["content"].as_str().unwrap();
+    assert!(system(0).contains("Old description") && !system(0).contains("RULE_V1"));
+    assert!(requests[1]["messages"].to_string().contains("RULE_V1"));
+    assert!(
+        requests[2]["messages"].as_array().unwrap().last().unwrap()["content"]
+            .as_str()
+            .unwrap()
+            .contains("already loaded")
+    );
+    assert!(
+        system(3).contains("Old description"),
+        "resume must not reread the changed file"
+    );
+    assert!(!system(3).contains("New description"));
+    assert!(system(4).contains("New description") && system(4).contains("code-review"));
+    assert!(
+        requests[4]["messages"].as_array().unwrap().last().unwrap()["content"]
+            .as_str()
+            .unwrap()
+            .contains("RULE_V2")
+    );
+    assert!(
+        requests[6]["messages"].as_array().unwrap().last().unwrap()["content"]
+            .as_str()
+            .unwrap()
+            .contains("already loaded")
+    );
+    let state = read_snapshot(&dir).unwrap();
+    state.skills.validate().unwrap();
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn h9_snapshot_without_skills_still_restores() {
+    let root = project();
+    let store = Store::open(&root, None).unwrap();
+    store
+        .save(
+            &config(),
+            &messages(),
+            &Meter::default(),
+            &Reader::default(),
+            &Skills::default(),
+        )
+        .unwrap();
+    let path = store.root.join(SNAPSHOT);
+    let mut snapshot: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    snapshot.as_object_mut().unwrap().remove("skills");
+    fs::write(&path, snapshot.to_string()).unwrap();
+    let state = store
+        .restore(Some(messages()[0].clone()), &config())
+        .unwrap();
+    assert_eq!(state.messages, messages());
+    assert!(!state.skills.initialized);
+    drop(store);
     fs::remove_dir_all(root).unwrap();
 }

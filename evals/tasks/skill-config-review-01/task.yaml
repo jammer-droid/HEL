@@ -1,0 +1,13 @@
+id: skill-config-review-01
+eval_version: eval-v9
+description: Select a configuration review skill and apply repository-specific rules.
+instruction: server.json을 저장소 규칙에 맞춰 리뷰하고 결과를 정리해줘.
+fixture: fixture/
+checks:
+  - id: report-exact
+    type: output_exact_match
+    expected_file: expected/report.txt
+  - id: config-unchanged
+    type: file_exact_match
+    path: server.json
+    expected_file: fixture/server.json

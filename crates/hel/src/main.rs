@@ -33,6 +33,7 @@ mod runtime;
 mod sandbox;
 mod search;
 mod sessions;
+mod skills;
 mod tools;
 
 use std::env;
@@ -150,16 +151,30 @@ fn run_args(args: Args) -> Result<(), Box<dyn Error>> {
         compaction,
     };
     let store = sessions::Store::open(&workdir, args.resume.as_deref())?;
-    let restored = if args.resume.is_some() {
-        store.restore(system, &config)?
+    let mut runtime = store.runtime()?;
+    let mut restored = if args.resume.is_some() {
+        store.restore(system.clone(), &config)?
     } else {
         sessions::Restored {
-            messages: system.into_iter().collect(),
+            messages: system.clone().into_iter().collect(),
             meter: context::Meter::default(),
             reader: read_file::Reader::default(),
+            skills: skills::Skills::default(),
         }
     };
-    let mut runtime = store.runtime()?;
+    let skills_enabled = config.tools.as_array().is_some_and(|tools| {
+        tools
+            .iter()
+            .any(|t| t["function"]["name"] == tools::READ_FILE)
+    });
+    restored.skills.configure(system, skills_enabled);
+    if !restored.skills.initialized && skills_enabled {
+        restored.skills.discover(&runtime);
+    }
+    restored
+        .skills
+        .sync_system(&mut restored.messages, &mut restored.meter);
+    runtime.skills = std::cell::RefCell::new(restored.skills);
     runtime.reader = restored.reader;
     let mut messages = restored.messages;
     let mut meter = restored.meter;
@@ -210,7 +225,15 @@ fn run_args(args: Args) -> Result<(), Box<dyn Error>> {
             ctx.budget.max_turns,
             &mut log,
         );
-        sessions::save_completed(&store, &config, &messages, &meter, &runtime.reader, &log);
+        sessions::save_completed(
+            &store,
+            &config,
+            &messages,
+            &meter,
+            &runtime.reader,
+            &runtime.skills.borrow(),
+            &log,
+        );
         if session && let Some(output) = &log.final_output {
             println!("[turn {}] {output}", index + 1);
         }
@@ -297,7 +320,15 @@ fn chat(
         if log.termination == Termination::MaxTurns {
             eprintln!("hel: stopped after {max_turns} model calls");
         }
-        sessions::save_completed(store, config, &messages, &meter, &runtime.reader, &log);
+        sessions::save_completed(
+            store,
+            config,
+            &messages,
+            &meter,
+            &runtime.reader,
+            &runtime.skills.borrow(),
+            &log,
+        );
         if let Some(summary) = log.context_summary() {
             eprintln!("[{summary}]");
         }
@@ -333,9 +364,14 @@ fn run_loop(
     } = session;
     for _ in 0..max_turns {
         if let Some(policy) = compaction {
-            context::before_request(messages, policy, meter, log, &mut |request| {
-                client.complete(request, Some(tools.definitions()))
-            });
+            context::before_request(
+                messages,
+                policy,
+                meter,
+                log,
+                &mut runtime.skills.borrow_mut(),
+                &mut |request| client.complete(request, Some(tools.definitions())),
+            );
         }
         let exchange = match client.complete(messages, Some(tools.definitions())) {
             Ok(exchange) => exchange,
@@ -383,7 +419,9 @@ fn run_loop(
                 .as_str()
                 .and_then(|raw| serde_json::from_str(raw).ok())
                 .unwrap_or_else(|| json!({}));
+            runtime.skills.borrow_mut().reconcile(messages);
             let execution = tools.call(runtime, name, &args, *access, *approval);
+            runtime.skills.borrow().sync_system(messages, meter);
             log.permissions.push(execution.trace);
             let result = execution.result;
             log.events.push(ToolEvent {
@@ -397,6 +435,7 @@ fn run_loop(
             if compaction.is_some() {
                 content = context::spill(runtime, content);
             }
+            runtime.skills.borrow_mut().delivered(id, &content);
             messages.push(json!({ "role": "tool", "tool_call_id": id, "content": content }));
         }
     }

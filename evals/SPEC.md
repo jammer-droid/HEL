@@ -299,3 +299,9 @@ H8의 두 조건은 같은 access=auto와 compaction 설정을 사용한다. 기
 - timeout은 run 전체에 한 번 적용한다. 둘째 프로세스에는 남은 시간만 주고, 이 모드에서는 기존 runner의 10초 grace를 붙이지 않는다. 첫 지시 실패·한도 초과·첫 프로세스 비정상 종료·저장된 세션 없음은 후속 실행을 중단한다.
 - 재시작 run의 원본은 `stages/01/`, `stages/02/`의 context·record·raw로 보존한다. run의 `raw/requests.jsonl`은 각 원본에 전체 `turn`과 `process`를 붙여 연결한 사본이다. 토큰·호출 수는 stage 합(derived), peak context는 최댓값(derived), last context는 마지막 stage 값이다. 필요한 stage 값이 없으면 해당 합계·최댓값도 unavailable이다. 전체 wall time은 driver가 측정한다. 마지막 지시의 출력으로 판정하고, 첫 지시가 실패하면 후속 답변으로 취급하지 않는다.
 - record-v0·verdict-v0 필드와 의미는 유지한다. 여러 프로세스도 task의 두 지시를 합쳐 run 하나다. 기존 Lab은 session_mode·recall_tokens가 없어 실행·판정 방식이 바뀌지 않으며 과거 비교 재측정은 불필요하다.
+
+### H10 Skills 행동 측정 (eval-v9)
+
+- `skill-config-review-01` 추가. 리뷰 skill과 참고 규칙, 무관한 skill, 잘못된 포트 설정을 같은 fixture에 배치한다. 기존 `output_exact_match`와 `file_exact_match`를 사용하며 runner·record·verdict 형식은 바꾸지 않는다.
+- 규칙 적용과 skill 선택은 raw tool 반환 내용으로 별도 확인한다. 출력 완전 일치와 의미상 오류 발견을 구분한다.
+- 기존 task의 입력·판정은 바뀌지 않아 이전 Lab을 다시 측정하지 않는다. 최초 H10 측정 당시 task의 버전 표기는 eval-v8이었으며, 새 task 추가에 따른 버전 표기를 eval-v9로 정리했다. fixture·check·Lab 정의와 측정 결과는 그대로 유지한다.

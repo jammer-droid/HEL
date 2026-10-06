@@ -41,7 +41,7 @@ tool 목록과 tool 호출 요청을 주고받는 형식은 공식 표준이 없
 | tool 호출 요청 | assistant message의 `tool_calls`. 인자는 JSON 문자열 | content의 `tool_use` block. 인자는 JSON 객체 |
 | tool 결과 | `role: "tool"` message | user message 안의 `tool_result` block |
 
-두 형식 모두 tool의 인자를 JSON Schema로 정의한다. model 내부에서 tool 정의와 호출이 어떤 텍스트로 바뀌는지는 provider가 처리하고 API 밖으로 드러나지 않는다. 이 Lab의 `hel`은 OpenAI 호환 형식을 쓴다. DeepSeek는 두 형식을 모두 제공해서([OpenAI 호환](https://api-docs.deepseek.com/guides/tool_calls/), [Anthropic 호환](https://api-docs.deepseek.com/guides/anthropic_api/)), Anthropic 형식을 쓰는 Claude Code도 같은 model로 실행할 수 있다.
+사용 가능한 tool 목록에는 각 tool의 이름, 설명, 인자 형식이 들어간다. 두 형식 모두 tool의 인자를 JSON Schema로 정의한다. model 내부에서 사용 가능한 tool 목록과 호출이 어떤 텍스트로 바뀌는지는 provider가 처리하고 API 밖으로 드러나지 않는다. 이 Lab의 `hel`은 OpenAI 호환 형식을 쓴다. DeepSeek는 두 형식을 모두 제공해서([OpenAI 호환](https://api-docs.deepseek.com/guides/tool_calls/), [Anthropic 호환](https://api-docs.deepseek.com/guides/anthropic_api/)), Anthropic 형식을 쓰는 Claude Code도 같은 model로 실행할 수 있다.
 
 ### agent loop란?
 
@@ -79,7 +79,7 @@ model 호출을 다루는 §7에는 이번 Lab과 관련된 내용이 두 가지
 이 Lab에서 확인할 수 있는 내용은 이렇다.
 
 - model API를 직접 호출하는 방법과 응답 구조
-- tool 정의, tool 호출 요청, tool 결과가 오가는 형식
+- 사용 가능한 tool 목록, tool 호출 요청, tool 결과가 오가는 형식
 - agent loop의 시작과 끝을 정하는 조건
 - loop가 token 사용량을 어떻게 바꾸는가
 
@@ -179,7 +179,7 @@ evals run h00 --conditions baseline --build
 
 ### 3. `read_file` tool 붙이기
 
-요청에 `tools`를 붙이면 model이 이 tool을 호출할 수 있다. tool을 따로 등록하는 절차는 없다. provider가 tool 정의를 model 입력에 넣고, model은 tool을 부를지 직접 답할지 정한다. model이 tool을 부르면 provider가 그 출력을 `tool_calls`로 바꿔 돌려준다. 실행은 harness가 한다.
+요청에 `tools`를 붙이면 model이 이 tool을 호출할 수 있다. tool을 따로 등록하는 절차는 없다. provider가 사용 가능한 tool 목록을 model 입력에 넣고, model은 tool을 부를지 직접 답할지 정한다. model이 tool을 부르면 provider가 그 출력을 `tool_calls`로 바꿔 돌려준다. 실행은 harness가 한다.
 
 아래 예시는 OpenAI Chat Completions 양식을 바탕으로 `tools[].function`을 작성한 것이다.
 
@@ -270,7 +270,7 @@ I can't access the file hello.txt.
 
 ### loop + `read_file`
 
-3번 모두 같은 순서로 끝났다. 첫 번째 run의 요청과 응답 원본(`raw/requests.jsonl`)을 [들어가며](#tool-calling과-agent-loop)의 다이어그램 순서대로 보면 이렇다. 반복되는 tool 정의는 생략했다.
+3번 모두 같은 순서로 끝났다. 첫 번째 run의 요청과 응답 원본(`raw/requests.jsonl`)을 [들어가며](#tool-calling과-agent-loop)의 다이어그램 순서대로 보면 이렇다. 반복되는 사용 가능한 tool 목록은 생략했다.
 
 **① harness → model: 지시 + 사용할 수 있는 tool 목록**
 
@@ -387,7 +387,7 @@ token 사용량을 호출별로 보면 이렇다(run 하나 기준).
 | loop + `read_file` | 1 | 333 | 67 (28) |
 | | 2 | 416 | 5 (0) |
 
-- **input은 늘었다.** 매 호출에 tool 정의(약 280 token)가 붙고, 두 번째 호출에는 첫 응답과 tool 결과까지 다시 보낸다. loop가 길어질수록 다시 보내는 대화도 길어진다.
+- **input은 늘었다.** 매 호출에 사용 가능한 tool 목록(약 280 token)가 붙고, 두 번째 호출에는 첫 응답과 tool 결과까지 다시 보낸다. loop가 길어질수록 다시 보내는 대화도 길어진다.
 - **output은 줄었다.** 단발 호출에서 model은 파일을 읽을 수 없는 상황에서 어떻게 답할지 709 token 동안 고민했다. tool이 있으면 28 token 만에 `read_file`을 부르기로 했고, 결과를 받은 뒤에는 고민 없이 내용을 출력했다.
 
 지금은 호출 두 번이라 비용이 작지만, tool 호출이 많아지면 매번 다시 보내는 대화가 비용의 대부분이 된다. Production 레벨의 harness는 이러한 문제를 고민하고 해결하기 위해 메모리 관리와 compaction을 제공한다. 우리도 추후에 이를 다룰 것이다.
@@ -402,6 +402,6 @@ token 사용량을 호출별로 보면 이렇다(run 하나 기준).
 | 두 번째 호출 input token (그중 cache) | 407–444 (256) | 690–698 (512) |
 | 읽기 tool 결과 | 파일 내용 그대로 | 줄마다 번호와 탭을 붙여 전달 |
 
-- system prompt와 tool 설명이 길어서 첫 호출이 더 크다. 실제 개발 작업 전반을 다루려면 model에게 알려줄 것이 많다.
+- 시스템 프롬프트와 tool 설명이 길어서 첫 호출이 더 크다. 실제 개발 작업 전반을 다루려면 model에게 알려줄 것이 많다.
 - 줄 번호는 파일의 특정 위치를 가리킬 때 유용한 출력 형식이 될 것이다.
 - 두 harness 모두 두 번째 호출의 앞부분을 provider cache에서 읽었다. DeepSeek API는 앞부분이 같은 요청을 [자동으로 cache한다](https://api-docs.deepseek.com/guides/kv_cache)(2026-10 기준). `hel`은 cache를 따로 요청하지 않았다. 대화가 길어질수록 의미가 커진다.

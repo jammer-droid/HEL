@@ -52,7 +52,12 @@
 
 # Part V — Extensibility and Orchestration
 
-- [H10 Skills / Hooks / MCP]()
+- [Part V 개요](parts/part5-extensibility-orchestration.md)
+- [H10 Skills / Hooks / MCP](labs/h10-skills-hooks-mcp/README.md)
+    - [A — Skills](labs/h10-skills-hooks-mcp/skills.md)
+    - [B — Hooks](labs/h10-skills-hooks-mcp/hooks.md)
+    - [C — MCP](labs/h10-skills-hooks-mcp/mcp.md)
+    - [FAQ](labs/h10-skills-hooks-mcp/faq.md)
 - [H11 Subagents]()
 - [H12 Parallelism]()
 

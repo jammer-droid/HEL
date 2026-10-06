@@ -10,7 +10,7 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{context::Meter, read_file::Reader, runtime};
+use crate::{context::Meter, read_file::Reader, runtime, skills::Skills};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 const SNAPSHOT: &str = "snapshot.json";
@@ -51,12 +51,15 @@ struct Snapshot {
     messages: Vec<Value>,
     meter: Meter,
     reader: Reader,
+    #[serde(default)]
+    skills: Skills,
 }
 
 pub struct Restored {
     pub messages: Vec<Value>,
     pub meter: Meter,
     pub reader: Reader,
+    pub skills: Skills,
 }
 
 pub struct Store {
@@ -117,6 +120,14 @@ impl Store {
     pub fn restore(&self, system: Option<Value>, current: &RequestConfig) -> Result<Restored> {
         let snapshot = read_snapshot(&self.root)?;
         validate_snapshot(&snapshot, &self.project, &self.id)?;
+        let mut skills = snapshot.skills.clone();
+        let enabled = current.tools.as_array().is_some_and(|tools| {
+            tools
+                .iter()
+                .any(|t| t["function"]["name"] == crate::tools::READ_FILE)
+        });
+        skills.configure(system, enabled);
+        let system = skills.system_message();
         let mut messages = snapshot.messages.clone();
         if messages.first().is_some_and(|m| m["role"] == "system") {
             messages.remove(0);
@@ -135,6 +146,7 @@ impl Store {
             messages,
             meter,
             reader: snapshot.reader,
+            skills,
         })
     }
 
@@ -144,6 +156,7 @@ impl Store {
         messages: &[Value],
         meter: &Meter,
         reader: &Reader,
+        skills: &Skills,
     ) -> Result<()> {
         let snapshot = Snapshot {
             schema_version: SCHEMA,
@@ -155,6 +168,7 @@ impl Store {
             messages: messages.to_vec(),
             meter: meter.clone(),
             reader: reader.clone(),
+            skills: skills.clone(),
         };
         validate_snapshot(&snapshot, &self.project, &self.id)?;
         let bytes = serde_json::to_vec_pretty(&snapshot)?;
@@ -190,6 +204,7 @@ pub fn save_completed(
     messages: &[Value],
     meter: &Meter,
     reader: &Reader,
+    skills: &Skills,
     log: &crate::output::RunLog,
 ) -> bool {
     if log.termination != record::Termination::Completed
@@ -198,7 +213,7 @@ pub fn save_completed(
     {
         return false;
     }
-    match store.save(config, messages, meter, reader) {
+    match store.save(config, messages, meter, reader, skills) {
         Ok(()) => true,
         Err(error) => {
             eprintln!(
@@ -356,6 +371,7 @@ fn validate_snapshot(snapshot: &Snapshot, project: &Path, id: &str) -> Result<()
         return Err("session ID or project directory does not match".into());
     }
     snapshot.reader.validate()?;
+    snapshot.skills.validate()?;
     let mut pending = std::collections::HashSet::new();
     for (index, message) in snapshot.messages.iter().enumerate() {
         match message["role"].as_str() {

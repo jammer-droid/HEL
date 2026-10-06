@@ -22,7 +22,7 @@ Codex와 DeepSeek Harness는 context budget을 어떻게 측정·배분하고, �
 
 ### 이번 Lab에서 다룰 context budget
 
-context budget(컨텍스트 예산)은 model의 context window를 어디에 얼마나 사용할지 분배하는 예산을 의미한다. 매 요청에는 system prompt와 tool 정의처럼 고정된 부분, 지금까지의 대화 기록, model이 이번에 쓸 출력 자리가 함께 들어간다. 대화 기록이 늘어나면 남은 공간이 줄고, 한도에 도달하면 harness는 기록 일부를 줄이거나 압축해야 한다.
+context budget(컨텍스트 예산)은 model의 context window를 어디에 얼마나 사용할지 분배하는 예산을 의미한다. 매 요청에는 시스템 프롬프트와 사용 가능한 tool 목록처럼 고정된 부분, 지금까지의 대화 기록, model이 이번에 쓸 출력 자리가 함께 들어간다. 대화 기록이 늘어나면 남은 공간이 줄고, 한도에 도달하면 harness는 기록 일부를 줄이거나 압축해야 한다.
 
 이번에는 Codex와 DeepSeek Harness의 소스를 읽고 다음을 비교한다.
 
@@ -75,7 +75,7 @@ context budget(컨텍스트 예산)은 model의 context window를 어디에 얼�
 
 H4에서 저장한 실행 기록에서 요청과 응답 하나를 꺼내 실제 DeepSeek이 어떤 응답을 하는지 확인할 필요가 있다. 아래는 본문 검색 작업의 첫 호출이다. (긴 문자열은 줄였고, 실행 디렉터리 경로는 `/path/to/run`으로 바꿔 적었다.)
 
-`hel`이 보내는 요청에는 model 이름, 출력 한도, tool 정의, 메시지 목록이 들어간다.
+`hel`이 보내는 요청에는 model 이름, 출력 한도, 사용 가능한 tool 목록, 메시지 목록이 들어간다.
 
 ```json
 {
@@ -143,18 +143,22 @@ H4에서 저장한 실행 기록에서 요청과 응답 하나를 꺼내 실제 
 
 한 요청이 window를 쓰는 모양은 다음과 같다.
 
-```text
-|<──────────────────────────── context window 1M token ─────────────────────────────>|
-|<────────────────── input (prompt_tokens) ──────────────────────>|<── output 자리 ──>|
-| tool 정의 | system | user | assistant | tool 결과 | ... ... ... | | reasoning + 답    |
-|<──── 매 요청 같은 앞부분 ────>|<──── 호출마다 뒤에 붙는 대화 기록 ──────>| | max_tokens 8,192 |
-```
+<table>
+<thead>
+<tr><th colspan="3">context window 1M token</th></tr>
+<tr><th colspan="2">input (prompt_tokens)</th><th>output 자리</th></tr>
+</thead>
+<tbody>
+<tr><td>사용 가능한 tool 목록 · system · user</td><td>assistant · tool 결과 · …</td><td>reasoning + 답</td></tr>
+<tr><td>매 요청 같은 앞부분</td><td>호출마다 붙는 대화 기록</td><td>max_tokens 8,192</td></tr>
+</tbody>
+</table>
 
-- **앞부분**: tool 정의, system prompt(실행 환경, `HEL.md`), 사용자 지시. 한 실행 안에서는 매 요청 같다.
+- **앞부분**: 사용 가능한 tool 목록, 시스템 프롬프트(실행 환경, `HEL.md`), 사용자 지시. 한 실행 안에서는 매 요청 같다.
 - **대화 기록**: model의 응답(assistant)과 tool 결과가 호출마다 뒤에 붙는다. tool을 쓰는 요청에서는 이전 응답의 `reasoning_content`도 context에 다시 들어간다([thinking mode 문서](https://api-docs.deepseek.com/guides/thinking_mode)). `hel`은 응답 message를 그대로 돌려보내므로 추론 내용도 다음 input이 된다.
 - **output 자리**: 이번 응답의 reasoning과 답이 쓰는 자리다. input이 커져서 input + `max_tokens`가 window를 넘으면 요청이 거절된다.
 
-§3의 세 번째 호출을 이 그림에 넣으면 input 4,591 token에 output 2 token이고, 그중 앞부분은 tool 정의·system·user를 합친 첫 호출의 462 token이다. 나머지 4,129 token은 두 번의 호출에서 붙은 대화 기록이다.(window 1M에 비하면 0.5%도 쓰지 않았다.)
+§3의 세 번째 호출을 이 그림에 넣으면 input 4,591 token에 output 2 token이고, 그중 앞부분은 사용 가능한 tool 목록·system·user를 합친 첫 호출의 462 token이다. 나머지 4,129 token은 두 번의 호출에서 붙은 대화 기록이다.(window 1M에 비하면 0.5%도 쓰지 않았다.)
 
 ### 5. harness가 조절할 수 있는 것
 
@@ -172,7 +176,7 @@ H4에서 기록한 65개 호출로 보면 다음과 같다.
 | 두 번째 이후 호출 (47개) | 107,334 | 69,888 | 65% |
 | 전체 | 119,031 | 69,888 | 59% |
 
-첫 호출은 18번 모두 cache hit에 실패했다. system prompt에 들어가는 작업 디렉터리 경로가 실행마다 달라서 앞부분이 실행끼리 같지 않은 것이 원인 중 하나로 보인다. 같은 실행 안의 다음 호출들은 앞 요청을 이어 붙였기 때문에 input의 65%가 cache hit였다.
+첫 호출은 18번 모두 cache hit에 실패했다. 시스템 프롬프트에 들어가는 작업 디렉터리 경로가 실행마다 달라서 앞부분이 실행끼리 같지 않은 것이 원인 중 하나로 보인다. 같은 실행 안의 다음 호출들은 앞 요청을 이어 붙였기 때문에 input의 65%가 cache hit였다.
 
 **새로 붙는 내용은 한 번은 cache miss다.** tool을 호출한 결과는 처음 대화에 들어갈 때 miss 가격으로 계산되고, 그 뒤 호출에서는 hit 가격으로 계속 실려 간다. hit 가격이 miss의 50분의 1이어도 window는 그대로 차지한다. 그래서 harness가 다룰 지점은 두 가지다.
 
@@ -300,11 +304,13 @@ test output::tests::formats_thousands ... ok
 
 조사한 내용을 바탕으로 H6에서 만들 context 관리 구조를 정했다. budget은 DeepSeek Harness의 기준을 따르고, 요청은 다음 순서로 구성한다.
 
-```text
-|<──────────────────────────── context window ───────────────────────────────>|
-| system · tool 정의 · HEL.md |      요약       |    최근 구간 원문    | output 자리 |
-|    고치지 않음 (cache 유지)    | 오래된 구간을 대체 |  window의 약 16%   | max_tokens |
-```
+<table>
+<thead><tr><th colspan="4">context window</th></tr></thead>
+<tbody>
+<tr><td>system · 사용 가능한 tool 목록 · HEL.md</td><td>요약</td><td>최근 구간 원문</td><td>output 자리</td></tr>
+<tr><td>고치지 않음 (cache 유지)</td><td>오래된 구간 대체</td><td>window의 약 16%</td><td>max_tokens</td></tr>
+</tbody>
+</table>
 
 | 단계 | 언제 | 하는 일 | 누가 |
 | --- | --- | --- | --- |
@@ -313,7 +319,7 @@ test output::tests::formats_thousands ... ok
 | 3. 이전 tool 결과 줄이기 | 기준을 넘었을 때 | 8,192자를 넘는 이전 tool 결과를 앞 4,096자와 뒤 1,024자만 남긴다. 기준 아래로 내려가면 여기서 끝낸다 | harness 코드 |
 | 4. 오래된 구간 요약 | 그래도 기준을 넘을 때 | 오래된 구간을 model에게 따로 보내 요약을 받고, 그 구간을 요약 하나로 바꾼다 | model |
 
-1번과 3번은 harness 코드가 정해진 길이에서 문자열을 자르는 일이다. 4번의 요약은 model이 대화를 읽고 새로 쓰는 글이다. compaction(컨텍스트 압축)은 1~4번 전체를 가리키고, 그중 model이 글을 새로 쓰는 단계가 4번의 요약이다. harness는 system prompt, tool 정의, 요약할 구간을 원래 대화와 똑같이 보내고 마지막에 요약 지시를 붙인다. model이 돌려준 답(`content`)이 요약이 되고, 대화를 이어 가는 model은 이 요청을 보지 못한다. 그래서 요약에는 API 호출 한 번의 비용과 시간이 들고, 무엇을 남길지는 model이 판단하며, 같은 대화라도 실행마다 다른 요약이 나올 수 있다.
+1번과 3번은 harness 코드가 정해진 길이에서 문자열을 자르는 일이다. 4번의 요약은 model이 대화를 읽고 새로 쓰는 글이다. compaction(컨텍스트 압축)은 1~4번 전체를 가리키고, 그중 model이 글을 새로 쓰는 단계가 4번의 요약이다. harness는 시스템 프롬프트, 사용 가능한 tool 목록, 요약할 구간을 원래 대화와 똑같이 보내고 마지막에 요약 지시를 붙인다. model이 돌려준 답(`content`)이 요약이 되고, 대화를 이어 가는 model은 이 요청을 보지 못한다. 그래서 요약에는 API 호출 한 번의 비용과 시간이 들고, 무엇을 남길지는 model이 판단하며, 같은 대화라도 실행마다 다른 요약이 나올 수 있다.
 
 `deepseek-flash`의 window(1M)로 계산하면 압축 기준은 약 800K token이어서 지금까지의 작업은 닿지 않는다. H6에서는 기준을 낮춰 압축을 일찍 일으키고, 그 뒤에도 작업을 이어 갈 수 있는지 확인한다.
 

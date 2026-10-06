@@ -12,7 +12,7 @@
 flowchart TB
     U[사용자 지시] --> L
     subgraph H[hel]
-        P[system prompt<br/>OS · shell · 작업 디렉터리]
+        P[시스템 프롬프트<br/>OS · shell · 작업 디렉터리]
         C[HEL.md 읽기]
         L[agent loop<br/>대화 기록을 그대로 쌓음]
         T[tool<br/>bash · read_file<br/>write_file · search_replace]
@@ -30,7 +30,7 @@ flowchart TB
     W --> C
 ```
 
-- harness는 매 호출에 system prompt, tool 정의, 사용자 지시, 지금까지의 대화 기록 전체를 model에게 보낸다. 대화형 모드에서는 입력이 바뀌어도 기록을 이어서 보낸다.
+- harness는 매 호출에 시스템 프롬프트, 사용 가능한 tool 목록, 사용자 지시, 지금까지의 대화 기록 전체를 model에게 보낸다. 대화형 모드에서는 입력이 바뀌어도 기록을 이어서 보낸다.
 - bash와 파일 읽기 결과는 길이 제한 없이 대화 기록에 들어간다. 검색 tool만 응답 하나에 100건·10,000 bytes 한도가 있다.
 - harness는 지금 보내는 요청이 model의 context window(한 번의 호출에서 model이 받을 수 있는 최대 token) 중 얼마를 쓰는지 모른다. 실행 기록에는 호출마다 받은 input token의 합계만 남는다.
 
@@ -72,7 +72,7 @@ Codex와 DeepSeek Harness가 context를 어떻게 재고 나누는지, 한도에
 flowchart TB
     U[사용자 지시] --> L
     subgraph H[hel]
-        P[system prompt]
+        P[시스템 프롬프트]
         C[HEL.md 읽기]
         L[agent loop]
         T[tool · 검색 tool]

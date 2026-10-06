@@ -22,6 +22,7 @@ pub struct Runtime {
     pub tmp: PathBuf,
     pub spill: PathBuf,
     pub reader: Reader,
+    pub skills: std::cell::RefCell<crate::skills::Skills>,
     project_dir: File,
     spill_dir: File,
     lease: Option<File>,
@@ -61,6 +62,7 @@ impl Runtime {
             tmp,
             spill,
             reader: Reader::default(),
+            skills: std::cell::RefCell::default(),
             project_dir,
             spill_dir,
             lease: Some(lease),
@@ -350,9 +352,19 @@ mod tests {
             "live data cannot be cleaned even when old"
         );
         drop(runtime);
+        // Concurrent tests can briefly inherit the lease between fork and exec, before
+        // CLOEXEC closes it. Cleanup is intentionally best-effort while any lease is live.
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while tmp.exists() && std::time::Instant::now() < deadline {
+            clean_runs(&base.join("runs"), SystemTime::now());
+            std::thread::sleep(Duration::from_millis(5));
+        }
         assert!(!tmp.exists());
         assert!(spill.exists());
-        clean_runs(&base.join("runs"), future);
+        while root.exists() && std::time::Instant::now() < deadline {
+            clean_runs(&base.join("runs"), future);
+            std::thread::sleep(Duration::from_millis(5));
+        }
         assert!(!root.exists());
         fs::remove_dir_all(base).unwrap();
     }

@@ -1,0 +1,49 @@
+lab: h10
+title: Skills configuration review
+revision: 1
+model:
+  provider: deepseek
+  id: deepseek-flash
+  params: {}
+budget:
+  max_turns: 8
+  timeout_seconds: 120
+  max_output_tokens: 8192
+conditions:
+  - name: baseline
+    harness: hel
+    settings:
+      tools: [bash, read_file]
+      access: auto
+      env: true
+      context_file: false
+      compaction: false
+  - name: variant
+    harness: hel
+    settings:
+      tools: [bash, read_file]
+      access: auto
+      env: true
+      context_file: false
+      compaction: false
+tasks: [skill-config-review-01]
+repetitions: 3
+rubric:
+  source: >
+    Baseline is hel before Skills (checkout 361496d), variant is Skills implementation
+    69045c3. Both use identical fixture, instruction, tools, model and budgets.
+    Baseline is measured retrospectively after implementation, not before it.
+  selection: >
+    Inspect raw calls and successful tool results for config-review/SKILL.md;
+    record unrelated release-notes reads separately. bash reads also count as evidence.
+  rules: >
+    Inspect successful reads of references/rules.md and server.json, and separately
+    assess whether the final answer identifies port 7000 outside 8000 through 9000.
+  format: >
+    report-exact checks the skill's prescribed line, not semantic correctness alone.
+    A formatting failure must not be described as failure to detect the invalid port.
+  budget: >
+    Six runs total, at most eight model calls per run, no retries or compaction calls.
+  scope: >
+    No external harness or long-context behavior measurement. Snapshot, compaction
+    preservation and duplicate-body handling are covered by deterministic tests.
