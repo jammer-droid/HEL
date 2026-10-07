@@ -79,7 +79,8 @@ git clone https://github.com/jammer-droid/HEL.git
 | [`h08`](https://github.com/jammer-droid/HEL/tree/h08) | H7 완성 상태. 접근 레벨과 호출별 승인 |
 | [`h09`](https://github.com/jammer-droid/HEL/tree/h09) | H8 완성 상태. macOS sandbox와 인스턴스별 저장 공간 |
 | [`h10`](https://github.com/jammer-droid/HEL/tree/h10) | H9 완성 상태. 세션 snapshot·재개·세션별 spill |
-| `h11` *(예정)* | H10 완성 상태 |
+| [`h11`](https://github.com/jammer-droid/HEL/tree/h11) | H10 완성 상태. Skills 목록·Hooks·지연 로딩 MCP tool |
+| `h12` *(예정)* | H11 완성 상태 |
 | `hXX` | H(XX-1) 완성 상태 |
 
 Lab을 시작할 때는 해당 tag에서 branch를 만든다. 예를 들어 H1은 `h01`에서 시작한다.

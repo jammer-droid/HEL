@@ -39,7 +39,8 @@ harness 구현은 바이브 코딩으로 진행한다. 코드를 작성하는 �
 | [`h08`](https://github.com/jammer-droid/HEL/tree/h08) | H7 완료 상태. 접근 레벨과 호출별 승인 |
 | [`h09`](https://github.com/jammer-droid/HEL/tree/h09) | H8 완료 상태. macOS sandbox와 인스턴스별 저장 공간 |
 | [`h10`](https://github.com/jammer-droid/HEL/tree/h10) | H9 완료 상태. 세션 snapshot·재개·세션별 spill |
-| `h11` *(예정)* | H10 완료 상태 |
+| [`h11`](https://github.com/jammer-droid/HEL/tree/h11) | H10 완료 상태. Skills 목록·Hooks·지연 로딩 MCP tool |
+| `h12` *(예정)* | H11 완료 상태 |
 
 ```bash
 git clone https://github.com/jammer-droid/HEL.git
