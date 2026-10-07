@@ -406,7 +406,7 @@ fn retained_body_survives_snapshot_and_deduplicates_after_resume() {
         )
         .unwrap();
     assert_eq!(restored.messages, messages);
-    p.runtime.skills.replace(restored.skills);
+    *p.runtime.skills.borrow_mut() = restored.skills;
     assert!(
         p.read(&mut messages, "b", json!({"path":path}))
             .contains("already loaded")

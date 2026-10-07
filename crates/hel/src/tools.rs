@@ -75,6 +75,11 @@ impl Toolset {
         self.delegate
     }
 
+    /// A built-in tool of this set that only reads (H12: may run at the same time as others).
+    pub fn offers_read_only(&self, name: &str) -> bool {
+        matches!(name, READ_FILE | GLOB | GREP) && self.tools.iter().any(|t| t.name() == name)
+    }
+
     /// Tool definitions sent with every request (OpenAI-compatible function tools).
     pub fn definitions(&self) -> &Value {
         &self.definitions

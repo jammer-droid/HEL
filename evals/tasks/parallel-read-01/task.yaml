@@ -1,0 +1,13 @@
+id: parallel-read-01
+eval_version: eval-v13
+description: Read four named service files and print the sum of their ports (H12). The answer needs every file, and the files do not depend on each other.
+instruction: >
+  Read services/auth.ini, services/billing.ini, services/search.ini and services/notify.ini
+  yourself, without delegating, and add up their port values.
+  The files do not depend on each other, so you can read them in any order.
+  Print only the sum as an integer.
+fixture: fixture/
+checks:
+  - id: output-exact
+    type: output_exact_match
+    expected_file: expected.txt

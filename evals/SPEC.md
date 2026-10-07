@@ -328,3 +328,11 @@ H8의 두 조건은 같은 access=auto와 compaction 설정을 사용한다. 기
 - record-v0·verdict-v0 필드와 의미는 변경하지 않는다. `usage`의 token·호출 수에는 자식 요청이 포함되고, `events`와 context 크기는 부모 대화 기준이다. 위임 사용 여부는 check가 아니라 raw 기록으로 판정한다.
 - 기존 Lab의 정의·결과·실행 경로는 바뀌지 않는다.
 
+### H12 병렬 실행 측정 (eval-v13)
+
+- `parallel-read-01` 추가: 이름을 준 `services/*.ini` 네 개(미끼 `legacy.ini`, 오래된 `docs/ports.md` 포함)의 port 합(`30909`)을 출력한다. 파일끼리 의존하지 않아 한 응답에서 읽기 호출을 여러 개 낼 수 있다. 기존 `output_exact_match`를 사용한다.
+- `parallel-explore-01` 추가: `modules/` 아래 auth·billing·search 세 모듈의 구현 기본 `TIMEOUT_MS`를 모듈마다 subagent에게 맡겨 찾고 `module=value` 세 줄로 합친다. 문서·test·사용하지 않는 상수에 다른 값이 있고, search는 두 파일을 따라가야 값이 나온다. 기존 `output_exact_match`를 사용한다.
+- hel 조건 `settings.parallel: true`는 `--parallel`로 전달한다. 생략하거나 `false`면 인자를 추가하지 않아 동시 실행 기능이 없는 baseline을 실행할 수 있다.
+- 실행 시간은 기존 `usage.wall_time_ms`로 비교한다. 자식이 실제로 겹쳐 실행됐는지는 hel 진단 로그 `raw/delegations.jsonl`의 자식 시작·종료 시각으로 확인한다(hel 구현 쪽 변경). 응답당 tool 호출 수는 `raw/requests.jsonl`에서 센다.
+- record-v0·verdict-v0 필드와 의미는 변경하지 않는다. 기존 Lab의 정의·결과·실행 경로는 바뀌지 않는다.
+

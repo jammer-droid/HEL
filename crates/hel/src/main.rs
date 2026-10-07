@@ -25,6 +25,9 @@
 //! `--delegate full|no-tools|task-only` (H11) offers `delegate_task`: a subagent runs this loop
 //! on its own conversation, starting from as much of the parent's as the mode allows, and its
 //! final answer becomes the tool result.
+//! `--parallel` (H12) runs the read-only calls (`read_file`, `glob`, `grep`) of one response at
+//! the same time, and several `delegate_task` calls of one response as concurrent subagents.
+//! Results enter the conversation in the order the model asked for them.
 
 mod api;
 mod context;
@@ -39,6 +42,7 @@ mod runtime;
 mod sandbox;
 mod search;
 mod sessions;
+mod shared;
 mod skills;
 mod tools;
 
@@ -77,6 +81,7 @@ struct Args {
     compaction: Compaction,
     access: Access,
     approval_input: Option<PathBuf>,
+    parallel: bool,
 }
 
 /// How context management is chosen on the command line.
@@ -183,7 +188,7 @@ fn run_args(args: Args) -> Result<(), Box<dyn Error>> {
     restored
         .skills
         .sync_system(&mut restored.messages, &mut restored.meter);
-    runtime.skills = std::cell::RefCell::new(restored.skills);
+    runtime.skills = shared::Shared::new(restored.skills);
     runtime.reader = restored.reader;
     runtime.hooks = hooks::Hooks::load(&runtime.project, &store.id);
     let mut messages = restored.messages;
@@ -205,6 +210,7 @@ fn run_args(args: Args) -> Result<(), Box<dyn Error>> {
                 compaction.as_ref(),
                 args.access,
                 &mut approval,
+                args.parallel,
             );
         }
     };
@@ -230,6 +236,7 @@ fn run_args(args: Args) -> Result<(), Box<dyn Error>> {
                 access: args.access,
                 approval: &mut approval,
                 depth: 0,
+                parallel: args.parallel,
             },
             &mut messages,
             &mut meter,
@@ -284,7 +291,8 @@ fn chat(
     max_turns: u32,
     compaction: Option<&context::Policy>,
     access: Access,
-    approval: &mut dyn Approval,
+    approval: &mut (dyn Approval + Send),
+    parallel: bool,
 ) -> Result<(), Box<dyn Error>> {
     let stdin = io::stdin();
     let mut session = Session {
@@ -295,6 +303,7 @@ fn chat(
         access,
         approval,
         depth: 0,
+        parallel,
     };
     eprintln!("hel — type /exit or press Ctrl-D to quit");
     loop {
@@ -358,9 +367,11 @@ struct Session<'a> {
     tools: &'a Toolset,
     compaction: Option<&'a context::Policy>,
     access: Access,
-    approval: &'a mut dyn Approval,
+    approval: &'a mut (dyn Approval + Send),
     /// 0 for the agent the user talks to, 1 for a subagent (H11).
     depth: u32,
+    /// H12: run read-only calls and subagents of one response at the same time.
+    parallel: bool,
 }
 
 fn run_loop(
@@ -428,126 +439,353 @@ fn run_loop(
             return;
         }
 
-        for call in &calls {
-            let id = call["id"].as_str().unwrap_or_default();
-            let name = call["function"]["name"].as_str().unwrap_or_default();
-            // `arguments` is a JSON object encoded as a string.
-            let args: Value = call["function"]["arguments"]
-                .as_str()
-                .and_then(|raw| serde_json::from_str(raw).ok())
-                .unwrap_or_else(|| json!({}));
-            let result = if name == delegate::DELEGATE_TASK && session.tools.delegate().is_some() {
-                delegate_task(session, messages, max_turns, id, &args, log)
+        let calls: Vec<Call> = calls.iter().map(Call::parse).collect();
+        let mut next = 0;
+        while next < calls.len() {
+            let rest = &calls[next..];
+            let together = concurrent_run(session, rest);
+            if together >= 2 {
+                let batch = &rest[..together];
+                let results = if batch[0].name == delegate::DELEGATE_TASK {
+                    delegate_tasks(session, messages, max_turns, batch, log)
+                } else {
+                    read_together(session, messages, meter, batch, log)
+                };
+                for (call, result) in batch.iter().zip(results) {
+                    deliver(session, messages, call, result, log);
+                }
             } else {
-                let Session {
-                    runtime,
-                    tools,
-                    access,
-                    approval,
-                    ..
-                } = session;
-                runtime.skills.borrow_mut().reconcile(messages);
-                let execution = tools.call_with_id(runtime, id, name, &args, *access, *approval);
-                runtime.skills.borrow().sync_system(messages, meter);
-                log.permissions.push(execution.trace);
-                execution.result
-            };
-            log.events.push(ToolEvent {
-                seq: log.events.len() as u32 + 1,
-                category: tools::category(name),
-                name: name.to_string(),
-                args,
-                ok: Some(result.is_ok()),
-            });
-            let mut content = result.unwrap_or_else(|err| format!("error: {err}"));
-            if session.compaction.is_some() {
-                content = context::spill(session.runtime, content);
+                let call = &rest[0];
+                let result =
+                    if call.name == delegate::DELEGATE_TASK && session.tools.delegate().is_some() {
+                        let mut outcomes = delegate_tasks(
+                            session,
+                            messages,
+                            max_turns,
+                            std::slice::from_ref(call),
+                            log,
+                        );
+                        outcomes.remove(0)
+                    } else {
+                        let Session {
+                            runtime,
+                            tools,
+                            access,
+                            approval,
+                            ..
+                        } = session;
+                        runtime.skills.borrow_mut().reconcile(messages);
+                        let execution = tools.call_with_id(
+                            runtime,
+                            &call.id,
+                            &call.name,
+                            &call.args,
+                            *access,
+                            &mut **approval,
+                        );
+                        runtime.skills.borrow().sync_system(messages, meter);
+                        log.permissions.push(execution.trace);
+                        execution.result
+                    };
+                deliver(session, messages, call, result, log);
             }
-            session.runtime.skills.borrow_mut().delivered(id, &content);
-            messages.push(json!({ "role": "tool", "tool_call_id": id, "content": content }));
+            next += together.max(1);
         }
     }
     log.termination = Termination::MaxTurns;
 }
 
-/// Runs a `delegate_task` call (H11): a child loop on its own conversation, with the parent's
-/// client, runtime, tools, access level and approval. The child's skill state starts as a copy
-/// of the parent's and the parent's is restored afterwards. Only the child's final answer is
-/// returned; its requests join the run's raw log and usage, and the call is traced.
-fn delegate_task(
+/// One tool call from a model response, with its JSON-string arguments decoded.
+struct Call {
+    id: String,
+    name: String,
+    args: Value,
+}
+
+impl Call {
+    fn parse(call: &Value) -> Self {
+        Self {
+            id: call["id"].as_str().unwrap_or_default().to_string(),
+            name: call["function"]["name"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            // `arguments` is a JSON object encoded as a string.
+            args: call["function"]["arguments"]
+                .as_str()
+                .and_then(|raw| serde_json::from_str(raw).ok())
+                .unwrap_or_else(|| json!({})),
+        }
+    }
+}
+
+/// H12: how many calls from the start of `calls` run at the same time, 0 or 1 meaning one by one.
+/// With `--parallel`, consecutive read-only builtin calls (`read_file`, `glob`, `grep`) form one
+/// group and consecutive `delegate_task` calls of the top-level agent another. Calls run one by
+/// one while hooks are configured or skills are registered, since both keep per-call state.
+fn concurrent_run(session: &Session, calls: &[Call]) -> usize {
+    if !session.parallel
+        || !session.runtime.hooks.is_empty()
+        || !session.runtime.skills.borrow().idle()
+    {
+        return 0;
+    }
+    let delegate = |c: &Call| {
+        c.name == delegate::DELEGATE_TASK
+            && session.tools.delegate().is_some()
+            && session.depth == 0
+    };
+    let read = |c: &Call| session.tools.offers_read_only(&c.name);
+    let same: &dyn Fn(&Call) -> bool = match calls.first() {
+        Some(c) if delegate(c) => &delegate,
+        Some(c) if read(c) => &read,
+        _ => return 0,
+    };
+    calls.iter().take_while(|c| same(c)).count()
+}
+
+/// Runs read-only calls at the same time (H12). Reads never ask for approval, so each thread
+/// gets an unavailable approval input. Results come back in the order of `calls`.
+fn read_together(
+    session: &mut Session,
+    messages: &mut Vec<Value>,
+    meter: &mut context::Meter,
+    calls: &[Call],
+    log: &mut RunLog,
+) -> Vec<Result<String, String>> {
+    let Session {
+        runtime,
+        tools,
+        access,
+        ..
+    } = session;
+    let (runtime, tools, access) = (*runtime, *tools, *access);
+    runtime.skills.borrow_mut().reconcile(messages);
+    let executions: Vec<permissions::Execution> = std::thread::scope(|scope| {
+        let handles: Vec<_> = calls
+            .iter()
+            .map(|call| {
+                scope.spawn(move || {
+                    let mut approval = permissions::Input::Unavailable;
+                    tools.call_with_id(
+                        runtime,
+                        &call.id,
+                        &call.name,
+                        &call.args,
+                        access,
+                        &mut approval,
+                    )
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| {
+                h.join()
+                    .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+            })
+            .collect()
+    });
+    runtime.skills.borrow().sync_system(messages, meter);
+    executions
+        .into_iter()
+        .map(|execution| {
+            log.permissions.push(execution.trace);
+            execution.result
+        })
+        .collect()
+}
+
+/// Records one call's result and adds it to the conversation as a tool message.
+fn deliver(
+    session: &Session,
+    messages: &mut Vec<Value>,
+    call: &Call,
+    result: Result<String, String>,
+    log: &mut RunLog,
+) {
+    log.events.push(ToolEvent {
+        seq: log.events.len() as u32 + 1,
+        category: tools::category(&call.name),
+        name: call.name.clone(),
+        args: call.args.clone(),
+        ok: Some(result.is_ok()),
+    });
+    let mut content = result.unwrap_or_else(|err| format!("error: {err}"));
+    if session.compaction.is_some() {
+        content = context::spill(session.runtime, content);
+    }
+    session
+        .runtime
+        .skills
+        .borrow_mut()
+        .delivered(&call.id, &content);
+    messages.push(json!({ "role": "tool", "tool_call_id": call.id, "content": content }));
+}
+
+/// Approval shared by subagents running at the same time (H12): one request at a time.
+struct OneAtATime<'a, 'b, 'c>(&'a std::sync::Mutex<&'b mut (dyn Approval + Send + 'c)>);
+
+impl Approval for OneAtATime<'_, '_, '_> {
+    fn request(&mut self, name: &str, args: &Value) -> permissions::Response {
+        let mut approval = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        approval.request(name, args)
+    }
+}
+
+fn now_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis())
+}
+
+/// Runs `delegate_task` calls (H11): each a child loop on its own conversation, with the
+/// parent's client, runtime, tools, access level and approval. The child's skill state starts as
+/// a copy of the parent's and the parent's is restored afterwards. Only the child's final answer
+/// is returned; its requests join the run's raw log and usage, and the call is traced. More than
+/// one call (H12, `--parallel`) runs the children at the same time and traces when each started
+/// and ended; approvals are then asked one at a time. Results follow the order of `calls`.
+fn delegate_tasks(
     session: &mut Session,
     messages: &[Value],
     max_turns: u32,
-    call_id: &str,
-    args: &Value,
+    calls: &[Call],
     log: &mut RunLog,
-) -> Result<String, String> {
+) -> Vec<Result<String, String>> {
     let mode = session
         .tools
         .delegate()
         .expect("delegate_task is offered only with a mode");
-    let task = args["task"].as_str().unwrap_or_default();
-    let mut trace = json!({
-        "seq": log.delegations.len() + 1,
-        "call_id": call_id,
-        "mode": mode.name(),
-        "depth": session.depth,
-        "task": task,
-    });
-    let result = if session.depth >= 1 {
-        Err(delegate::DEPTH_LIMIT.to_string())
-    } else if task.trim().is_empty() {
-        Err("delegate_task needs a non-empty task".to_string())
-    } else {
-        let mut child_messages = delegate::child_messages(messages, mode, task);
-        trace["child_start_messages"] = json!(child_messages.len());
-        let parent_skills = session.runtime.skills.borrow().clone();
-        let mut child_log = RunLog::new();
-        child_log.agent = Some("child");
-        child_log.turn = log.turn;
-        let mut child = Session {
-            client: session.client,
-            runtime: session.runtime,
-            tools: session.tools,
-            compaction: session.compaction,
-            access: session.access,
-            approval: &mut *session.approval,
-            depth: session.depth + 1,
+    let parent_skills = session.runtime.skills.borrow().clone();
+    struct Child {
+        trace: Value,
+        messages: Vec<Value>,
+        log: RunLog,
+        refused: Option<String>,
+    }
+    let mut children: Vec<Child> = calls
+        .iter()
+        .enumerate()
+        .map(|(i, call)| {
+            let task = call.args["task"].as_str().unwrap_or_default();
+            let mut trace = json!({
+                "seq": log.delegations.len() + i + 1,
+                "call_id": call.id,
+                "mode": mode.name(),
+                "depth": session.depth,
+                "task": task,
+                "concurrent": calls.len(),
+            });
+            let refused = if session.depth >= 1 {
+                Some(delegate::DEPTH_LIMIT.to_string())
+            } else if task.trim().is_empty() {
+                Some("delegate_task needs a non-empty task".to_string())
+            } else {
+                None
+            };
+            let messages = if refused.is_none() {
+                let messages = delegate::child_messages(messages, mode, task);
+                trace["child_start_messages"] = json!(messages.len());
+                messages
+            } else {
+                Vec::new()
+            };
+            let mut child_log = RunLog::new();
+            child_log.agent = Some("child");
+            child_log.turn = log.turn;
+            Child {
+                trace,
+                messages,
+                log: child_log,
+                refused,
+            }
+        })
+        .collect();
+    let (client, runtime, tools) = (session.client, session.runtime, session.tools);
+    let (compaction, access, depth, parallel) = (
+        session.compaction,
+        session.access,
+        session.depth + 1,
+        session.parallel,
+    );
+    let run = |child: &mut Child, approval: &mut (dyn Approval + Send)| {
+        if child.refused.is_some() {
+            return;
+        }
+        child.trace["started_at_ms"] = json!(now_ms());
+        let mut session = Session {
+            client,
+            runtime,
+            tools,
+            compaction,
+            access,
+            approval,
+            depth,
+            parallel,
         };
         run_loop(
-            &mut child,
-            &mut child_messages,
+            &mut session,
+            &mut child.messages,
             &mut context::Meter::default(),
             max_turns,
-            &mut child_log,
+            &mut child.log,
         );
-        *session.runtime.skills.borrow_mut() = parent_skills;
-        log.absorb_child(&child_log);
-        trace["child_requests"] = json!(child_log.requests());
-        trace["child_events"] = json!(child_log.events);
-        trace["child_permissions"] = json!(child_log.permissions);
-        trace["child_delegations"] = json!(child_log.delegations);
-        trace["termination"] = json!(child_log.termination);
-        trace["error"] = json!(child_log.error);
-        match (&child_log.final_output, child_log.termination) {
-            (Some(answer), Termination::Completed) if child_log.error.is_none() => {
-                Ok(answer.clone())
+        child.trace["ended_at_ms"] = json!(now_ms());
+    };
+    if children.len() == 1 {
+        run(&mut children[0], &mut *session.approval);
+    } else {
+        let shared = std::sync::Mutex::new(&mut *session.approval);
+        std::thread::scope(|scope| {
+            for child in &mut children {
+                let (run, shared) = (&run, &shared);
+                scope.spawn(move || run(child, &mut OneAtATime(shared)));
             }
-            _ => Err(format!(
-                "the subagent ended without a final answer ({})",
-                child_log
-                    .error
-                    .clone()
-                    .unwrap_or_else(|| format!("{:?}", child_log.termination))
-            )),
-        }
-    };
-    trace["result"] = match &result {
-        Ok(answer) => json!({ "ok": answer }),
-        Err(err) => json!({ "error": err }),
-    };
-    log.delegations.push(trace);
-    result
+        });
+    }
+    *session.runtime.skills.borrow_mut() = parent_skills;
+    children
+        .into_iter()
+        .map(
+            |Child {
+                 mut trace,
+                 log: child_log,
+                 refused,
+                 ..
+             }| {
+                let result = match refused {
+                    Some(reason) => Err(reason),
+                    None => {
+                        log.absorb_child(&child_log);
+                        trace["child_requests"] = json!(child_log.requests());
+                        trace["child_events"] = json!(child_log.events);
+                        trace["child_permissions"] = json!(child_log.permissions);
+                        trace["child_delegations"] = json!(child_log.delegations);
+                        trace["termination"] = json!(child_log.termination);
+                        trace["error"] = json!(child_log.error);
+                        match (&child_log.final_output, child_log.termination) {
+                            (Some(answer), Termination::Completed) if child_log.error.is_none() => {
+                                Ok(answer.clone())
+                            }
+                            _ => Err(format!(
+                                "the subagent ended without a final answer ({})",
+                                child_log
+                                    .error
+                                    .clone()
+                                    .unwrap_or_else(|| format!("{:?}", child_log.termination))
+                            )),
+                        }
+                    }
+                };
+                trace["result"] = match &result {
+                    Ok(answer) => json!({ "ok": answer }),
+                    Err(err) => json!({ "error": err }),
+                };
+                log.delegations.push(trace);
+                result
+            },
+        )
+        .collect()
 }
 
 /// A positive token count for `flag`.
@@ -597,6 +835,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut no_compaction = false;
     let mut tools = None;
     let mut delegate = None;
+    let mut parallel = false;
     let mut env = true;
     let mut context_file = Some(prompt::DEFAULT_CONTEXT_FILE.to_string());
     let mut context = None;
@@ -618,6 +857,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, String> {
                 tools = Some(Toolset::new(&names)?);
             }
             "--delegate" => delegate = Some(delegate::Mode::parse(&value()?)?),
+            "--parallel" => parallel = true,
             "--env" => env = true,
             "--no-env" => env = false,
             "--context-file" => context_file = Some(value()?),
@@ -676,6 +916,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, String> {
         context_file,
         context,
         record,
+        parallel,
     })
 }
 
@@ -707,6 +948,10 @@ fn manual_context() -> RunContext {
         },
     }
 }
+
+#[cfg(test)]
+#[path = "parallel_tests.rs"]
+mod parallel_tests;
 
 #[cfg(test)]
 mod tests {

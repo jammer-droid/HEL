@@ -346,7 +346,7 @@ pub(crate) fn successful(output: Output) {
     );
 }
 
-fn read_request(stream: &mut TcpStream) -> Value {
+pub(crate) fn read_request(stream: &mut TcpStream) -> Value {
     // Accepted sockets can inherit the listener's nonblocking mode on macOS.
     stream.set_nonblocking(false).unwrap();
     stream

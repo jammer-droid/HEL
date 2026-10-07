@@ -104,7 +104,8 @@ fn build(root: &Path) -> Result<String, Box<dyn Error>> {
 /// with its own defaults: `tools` (a list of tool names) becomes `--tools a,b`; `env: true` /
 /// `false` becomes `--env` / `--no-env`; `context_file: <name>` becomes `--context-file <name>`
 /// and `context_file: false` becomes `--no-context-file`. (From H3 on, hel sends the environment
-/// and `HEL.md` by default.) `delegate: <mode>` (H11) becomes `--delegate <mode>`.
+/// and `HEL.md` by default.) `delegate: <mode>` (H11) becomes `--delegate <mode>`, and
+/// `parallel: true` (H12) becomes `--parallel`.
 fn hel_args(settings: &Value) -> Result<Vec<String>, Box<dyn Error>> {
     let mut args = tool_args(settings)?;
     match settings.get("env") {
@@ -141,6 +142,13 @@ fn hel_args(settings: &Value) -> Result<Vec<String>, Box<dyn Error>> {
             .filter(|v| matches!(*v, "full" | "no-tools" | "task-only"))
             .ok_or("settings.delegate must be full, no-tools, or task-only")?;
         args.extend(["--delegate".to_string(), mode.to_string()]);
+    }
+    match settings.get("parallel") {
+        None | Some(Value::Bool(false)) => {}
+        Some(Value::Bool(true)) => args.push("--parallel".to_string()),
+        Some(other) => {
+            return Err(format!("settings.parallel must be true or false, got {other}").into());
+        }
     }
     if let Some(response) = settings.get("approval_response") {
         if settings.get("access").and_then(Value::as_str) != Some("confirm") {
@@ -484,6 +492,9 @@ mod tests {
             ["--delegate", "task-only"]
         );
         assert!(hel_args(&json!({"delegate":"summary"})).is_err());
+        assert_eq!(hel_args(&json!({"parallel":true})).unwrap(), ["--parallel"]);
+        assert!(hel_args(&json!({"parallel":false})).unwrap().is_empty());
+        assert!(hel_args(&json!({"parallel":"yes"})).is_err());
     }
 
     #[test]

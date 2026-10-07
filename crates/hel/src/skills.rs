@@ -233,6 +233,11 @@ impl Skills {
         self.visible.remove(path);
     }
 
+    /// No skill is offered, so per-call skill state never changes (H12).
+    pub fn idle(&self) -> bool {
+        !self.enabled || self.catalog.is_empty()
+    }
+
     pub fn system_message(&self) -> Option<Value> {
         let mut message = self.base_system.clone();
         if !self.enabled || self.catalog.is_empty() {

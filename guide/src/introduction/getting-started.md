@@ -81,7 +81,8 @@ git clone https://github.com/jammer-droid/HEL.git
 | [`h10`](https://github.com/jammer-droid/HEL/tree/h10) | H9 완성 상태. 세션 snapshot·재개·세션별 spill |
 | [`h11`](https://github.com/jammer-droid/HEL/tree/h11) | H10 완성 상태. Skills 목록·Hooks·지연 로딩 MCP tool |
 | [`h12`](https://github.com/jammer-droid/HEL/tree/h12) | H11 완성 상태. subagent에게 작업을 순차 위임하는 `delegate_task` |
-| `h13` *(예정)* | H12 완성 상태 |
+| [`h13`](https://github.com/jammer-droid/HEL/tree/h13) | H12 완성 상태. 읽기 전용 tool과 subagent를 동시에 실행하는 `--parallel` |
+| `h14` *(예정)* | H13 완성 상태 |
 | `hXX` | H(XX-1) 완성 상태 |
 
 Lab을 시작할 때는 해당 tag에서 branch를 만든다. 예를 들어 H1은 `h01`에서 시작한다.

@@ -31,3 +31,4 @@ Thumbs.db
 
 # Local hel session history and spill artifacts
 .hel/
+.claude/launch.json

@@ -54,7 +54,7 @@ pub trait Approvable {
 }
 
 /// The gate is the only production caller of tool execution.
-pub trait Tool: Approvable {
+pub trait Tool: Approvable + Send + Sync {
     fn name(&self) -> &str;
     fn run(&self, runtime: &Runtime, args: &Value) -> Result<String, String>;
 }
@@ -201,10 +201,10 @@ pub fn execute(
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::cell::Cell;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct NewTool<'a> {
-        calls: &'a Cell<usize>,
+        calls: &'a AtomicUsize,
     }
     impl Approvable for NewTool<'_> {
         fn action(&self, _: &Value) -> Action {
@@ -216,18 +216,22 @@ mod tests {
             "new-tool"
         }
         fn run(&self, _: &Runtime, _: &Value) -> Result<String, String> {
-            self.calls.set(self.calls.get() + 1);
+            self.calls.fetch_add(1, Ordering::SeqCst);
             Ok("done".into())
         }
     }
     struct Observe<'a> {
-        calls: &'a Cell<usize>,
+        calls: &'a AtomicUsize,
         response: Response,
         prompts: usize,
     }
     impl Approval for Observe<'_> {
         fn request(&mut self, _: &str, _: &Value) -> Response {
-            assert_eq!(self.calls.get(), 0, "execution must wait for approval");
+            assert_eq!(
+                self.calls.load(Ordering::SeqCst),
+                0,
+                "execution must wait for approval"
+            );
             self.prompts += 1;
             self.response
         }
@@ -236,7 +240,7 @@ mod tests {
     #[test]
     fn new_tool_uses_common_gate_and_waits_for_explicit_approval() {
         for response in [Response::Approved, Response::Denied, Response::Unavailable] {
-            let calls = Cell::new(0);
+            let calls = AtomicUsize::new(0);
             let tool = NewTool { calls: &calls };
             let mut approval = Observe {
                 calls: &calls,
@@ -252,7 +256,10 @@ mod tests {
                 &mut approval,
             );
             assert_eq!(approval.prompts, 1);
-            assert_eq!(calls.get(), usize::from(response == Response::Approved));
+            assert_eq!(
+                calls.load(Ordering::SeqCst),
+                usize::from(response == Response::Approved)
+            );
             assert_eq!(out.trace.executed, response == Response::Approved);
             assert_eq!(out.result.is_ok(), response == Response::Approved);
         }
@@ -261,7 +268,7 @@ mod tests {
     #[test]
     fn automatic_and_read_only_do_not_consume_approval() {
         for access in [Access::Auto, Access::ReadOnly] {
-            let calls = Cell::new(0);
+            let calls = AtomicUsize::new(0);
             let tool = NewTool { calls: &calls };
             let mut approval = Observe {
                 calls: &calls,
@@ -278,13 +285,16 @@ mod tests {
             );
             assert_eq!(approval.prompts, 0);
             assert_eq!(out.trace.executed, access == Access::Auto);
-            assert_eq!(calls.get(), usize::from(access == Access::Auto));
+            assert_eq!(
+                calls.load(Ordering::SeqCst),
+                usize::from(access == Access::Auto)
+            );
         }
     }
 
     #[test]
     fn approval_is_one_call_only_and_exhaustion_fails_closed() {
-        let calls = Cell::new(0);
+        let calls = AtomicUsize::new(0);
         let tool = NewTool { calls: &calls };
         let mut input = Input::Script(VecDeque::from([true, false]));
         for expected in [true, false, false] {
@@ -298,7 +308,7 @@ mod tests {
             );
             assert_eq!(out.trace.executed, expected);
         }
-        assert_eq!(calls.get(), 1);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
     #[test]

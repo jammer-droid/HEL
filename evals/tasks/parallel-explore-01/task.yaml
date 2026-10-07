@@ -1,0 +1,13 @@
+id: parallel-explore-01
+eval_version: eval-v13
+description: Find the default TIMEOUT_MS in three independent modules by delegating one module to each subagent, then combine the answers (H12). Docs and tests contain other values.
+instruction: >
+  modules/ 아래 auth, billing, search 세 모듈 각각의 구현 코드(src/)에서 기본 TIMEOUT_MS 값을 찾아.
+  문서와 테스트에는 다른 값이 있을 수 있다.
+  모듈마다 delegate_task로 subagent를 하나씩 맡기고, 세 위임은 서로 독립적이니 한 번에 함께 요청해.
+  최종 답은 auth=<값>, billing=<값>, search=<값> 세 줄만 이 순서로 써.
+fixture: fixture/
+checks:
+  - id: output-exact
+    type: output_exact_match
+    expected_file: expected.txt

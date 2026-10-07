@@ -2,7 +2,9 @@
 //! trust, the client side of the protocol, request timeouts, result conversion and the shutdown
 //! of the servers it started. Calls pass through the same hooks and permission gate as built-ins.
 
-use std::cell::{Cell, RefCell};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+use crate::shared::Shared;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, IsTerminal, Read, Write};
@@ -71,10 +73,10 @@ pub struct Mcp {
     servers: Vec<Server>,
     /// Discovered tools by their model-visible name.
     tools: BTreeMap<String, McpTool>,
-    loaded: RefCell<BTreeSet<String>>,
+    loaded: Shared<BTreeSet<String>>,
     loader: LoadTool,
     limits: Limits,
-    trace: RefCell<Vec<Value>>,
+    trace: Shared<Vec<Value>>,
 }
 
 /// What a model-visible tool name refers to.
@@ -533,11 +535,11 @@ enum Incoming {
 
 struct Server {
     name: String,
-    child: RefCell<Child>,
-    stdin: RefCell<Option<ChildStdin>>,
-    incoming: Receiver<Incoming>,
-    next_id: Cell<u64>,
-    alive: Cell<bool>,
+    child: Shared<Child>,
+    stdin: Shared<Option<ChildStdin>>,
+    incoming: Shared<Receiver<Incoming>>,
+    next_id: AtomicU64,
+    alive: AtomicBool,
     timeout: Duration,
     stderr: Arc<Mutex<Vec<u8>>>,
 }
@@ -548,7 +550,7 @@ impl Server {
         name: &str,
         config: &ServerConfig,
         limits: Limits,
-        trace: &RefCell<Vec<Value>>,
+        trace: &Shared<Vec<Value>>,
     ) -> Result<(Self, Vec<Value>), String> {
         let timeout = match config.timeout {
             Some(0) => return Err("timeout must be a positive number of seconds".into()),
@@ -590,11 +592,11 @@ impl Server {
         });
         let server = Self {
             name: name.to_string(),
-            child: RefCell::new(child),
-            stdin: RefCell::new(stdin),
-            incoming,
-            next_id: Cell::new(1),
-            alive: Cell::new(true),
+            child: Shared::new(child),
+            stdin: Shared::new(stdin),
+            incoming: Shared::new(incoming),
+            next_id: AtomicU64::new(1),
+            alive: AtomicBool::new(true),
             timeout,
             stderr,
         };
@@ -647,7 +649,7 @@ impl Server {
         pipe.write_all(line.as_bytes())
             .and_then(|()| pipe.flush())
             .map_err(|e| {
-                self.alive.set(false);
+                self.alive.store(false, Ordering::SeqCst);
                 format!("MCP server {} disconnected: {e}", self.name)
             })
     }
@@ -661,18 +663,17 @@ impl Server {
         method: &str,
         params: Value,
         timeout: Duration,
-        trace: &RefCell<Vec<Value>>,
+        trace: &Shared<Vec<Value>>,
     ) -> Result<Value, String> {
-        if !self.alive.get() {
+        if !self.alive.load(Ordering::SeqCst) {
             return Err(format!("MCP server {} disconnected", self.name));
         }
-        let id = self.next_id.get();
-        self.next_id.set(id + 1);
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         self.send(&json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}))?;
         let deadline = Instant::now() + timeout;
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
-            match self.incoming.recv_timeout(remaining) {
+            match self.incoming.borrow().recv_timeout(remaining) {
                 Ok(Incoming::Message(message)) => {
                     if message.get("method").is_some() {
                         // A request from the server: hel offers no client capabilities.
@@ -702,7 +703,7 @@ impl Server {
                         "status": "invalid", "message": reason}));
                 }
                 Ok(Incoming::Closed) | Err(RecvTimeoutError::Disconnected) => {
-                    self.alive.set(false);
+                    self.alive.store(false, Ordering::SeqCst);
                     trace
                         .borrow_mut()
                         .push(json!({"event": "McpServer", "server": self.name,
@@ -730,7 +731,7 @@ impl Server {
 
     /// MCP stdio shutdown: close the server's input, wait, then SIGTERM and finally SIGKILL.
     fn shutdown(&self, wait: Duration) {
-        self.alive.set(false);
+        self.alive.store(false, Ordering::SeqCst);
         drop(self.stdin.borrow_mut().take());
         let mut child = self.child.borrow_mut();
         let group = child.id() as i32;

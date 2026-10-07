@@ -1,7 +1,7 @@
 //! Trusted project command hooks. Policy and its state belong to the external command;
 //! hel owns discovery, trust, invocation, decisions, process limits, and model feedback.
 
-use std::cell::RefCell;
+use crate::shared::Shared;
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, IsTerminal, Read, Write};
@@ -87,7 +87,7 @@ pub(crate) struct Trust {
 pub struct Hooks {
     handlers: Vec<Handler>,
     session_id: String,
-    trace: RefCell<Vec<Value>>,
+    trace: Shared<Vec<Value>>,
 }
 
 pub struct Call<'a> {
@@ -102,6 +102,11 @@ enum Decision {
 }
 
 impl Hooks {
+    /// No trusted hook is configured.
+    pub fn is_empty(&self) -> bool {
+        self.handlers.is_empty()
+    }
+
     /// No prompt is read from piped model instructions. Existing exact trust works in batch mode.
     pub fn load(project: &Path, session_id: &str) -> Self {
         Self::load_with_review(project, session_id, |definition| {

@@ -48,5 +48,5 @@
 <path d="M594 754H693V665" class="line" marker-end="url(#arrow)"/>
 <rect x="655" y="629" width="76" height="34" rx="9" class="new"/>
 <text x="693" y="652" text-anchor="middle" class="small">통합</text>
-<text x="380" y="813" text-anchor="middle" class="small">작업 공간 · 충돌 처리 · 결과 통합</text>
+<text x="380" y="813" text-anchor="middle" class="small">읽기 전용 동시 실행 · 순서대로 결과 통합</text>
 </svg>

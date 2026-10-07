@@ -415,7 +415,11 @@ fn timeout_cancels_the_request_and_keeps_the_server() {
     let slow_id = fixture.calls()[0]["id"].clone();
     assert_eq!(cancelled["params"]["requestId"], slow_id);
     assert_eq!(runtime.mcp.servers[0].child.borrow().id(), pid);
-    assert!(runtime.mcp.servers[0].alive.get());
+    assert!(
+        runtime.mcp.servers[0]
+            .alive
+            .load(std::sync::atomic::Ordering::SeqCst)
+    );
 }
 
 #[test]

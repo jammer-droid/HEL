@@ -1,7 +1,7 @@
 //! Bounded UTF-8 reads with session-persisted continuation cursors. A cursor retains the selected
 //! range and file identity; it cannot be used to read another run's file or a changed file.
 
-use std::cell::RefCell;
+use crate::shared::Shared;
 use std::collections::VecDeque;
 use std::fs::{File, Metadata};
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
@@ -18,7 +18,7 @@ const MAX_CURSORS: usize = 128;
 
 #[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Reader {
-    cursors: RefCell<VecDeque<(String, Position)>>,
+    cursors: Shared<VecDeque<(String, Position)>>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -189,12 +189,16 @@ impl Reader {
             && position.remaining_lines.is_none();
         if let Some((path, doc)) = &skill
             && whole
-            && runtime.skills.borrow().same_visible(path, doc)
         {
-            runtime.skills.borrow_mut().accept(path, doc);
-            return Ok(format!(
-                "Skill at {path} is already loaded in the current context."
-            ));
+            // One guard for the check and the update: a second lock while the first is held
+            // would wait forever (`Shared`, H12).
+            let mut skills = runtime.skills.borrow_mut();
+            if skills.same_visible(path, doc) {
+                skills.accept(path, doc);
+                return Ok(format!(
+                    "Skill at {path} is already loaded in the current context."
+                ));
+            }
         }
         let offset = position.offset as usize;
         let (content, more, remaining_lines) =
