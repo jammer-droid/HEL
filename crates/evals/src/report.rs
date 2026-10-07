@@ -291,8 +291,9 @@ fn markdown(
 }
 
 /// Model requests read from a raw log whose lines carry an OpenAI-style `response.usage`.
-/// Entries with a `purpose` (e.g. `"compaction"`, H6) are the harness's own auxiliary requests;
-/// they are kept apart from the conversation's requests.
+/// Entries with a `purpose` (e.g. `"compaction"`, H6) are the harness's own auxiliary requests,
+/// and entries with `"agent": "child"` are a subagent's requests (H11); both are kept apart from
+/// the parent conversation's requests.
 struct Requests {
     /// Conversation requests in order: (prompt tokens, cache-hit tokens if reported).
     main: Vec<(u64, Option<u64>)>,
@@ -314,7 +315,11 @@ fn parse_requests(raw: &str) -> Option<Requests> {
         let hit = usage
             .get("prompt_cache_hit_tokens")
             .and_then(serde_json::Value::as_u64);
-        match entry.get("purpose").and_then(serde_json::Value::as_str) {
+        let purpose = entry
+            .get("purpose")
+            .and_then(serde_json::Value::as_str)
+            .or_else(|| (entry.get("agent")? == "child").then_some("child"));
+        match purpose {
             Some(purpose) => {
                 requests
                     .aux
@@ -589,6 +594,19 @@ mod tests {
                  · compaction after call 2: 2100 (cache hit 1920)"
             )
         );
+    }
+
+    #[test]
+    fn keeps_child_requests_apart_from_the_parent() {
+        let raw = [
+            r#"{"response":{"usage":{"prompt_tokens":1800,"prompt_cache_hit_tokens":0}}}"#,
+            r#"{"agent":"child","response":{"usage":{"prompt_tokens":1900,"prompt_cache_hit_tokens":1792}}}"#,
+            r#"{"response":{"usage":{"prompt_tokens":1950,"prompt_cache_hit_tokens":1920}}}"#,
+        ]
+        .join("\n");
+        let requests = parse_requests(&raw).unwrap();
+        assert_eq!(requests.main, [(1800, Some(0)), (1950, Some(1920))]);
+        assert_eq!(requests.aux, [(1, "child".to_string(), 1900, Some(1792))]);
     }
 
     #[test]

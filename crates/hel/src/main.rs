@@ -22,9 +22,13 @@
 //! large tool results go to a file, and over the threshold old history is pruned and summarized by
 //! the model. `--compact-at <tokens> --keep-recent <tokens>` change the thresholds and
 //! `--no-compaction` turns it off.
+//! `--delegate full|no-tools|task-only` (H11) offers `delegate_task`: a subagent runs this loop
+//! on its own conversation, starting from as much of the parent's as the mode allows, and its
+//! final answer becomes the tool result.
 
 mod api;
 mod context;
+mod delegate;
 mod hooks;
 mod mcp;
 mod output;
@@ -225,6 +229,7 @@ fn run_args(args: Args) -> Result<(), Box<dyn Error>> {
                 compaction: compaction.as_ref(),
                 access: args.access,
                 approval: &mut approval,
+                depth: 0,
             },
             &mut messages,
             &mut meter,
@@ -289,6 +294,7 @@ fn chat(
         compaction,
         access,
         approval,
+        depth: 0,
     };
     eprintln!("hel — type /exit or press Ctrl-D to quit");
     loop {
@@ -353,6 +359,8 @@ struct Session<'a> {
     compaction: Option<&'a context::Policy>,
     access: Access,
     approval: &'a mut dyn Approval,
+    /// 0 for the agent the user talks to, 1 for a subagent (H11).
+    depth: u32,
 }
 
 fn run_loop(
@@ -362,15 +370,14 @@ fn run_loop(
     max_turns: u32,
     log: &mut RunLog,
 ) {
-    let Session {
-        client,
-        runtime,
-        tools,
-        compaction,
-        access,
-        approval,
-    } = session;
     for _ in 0..max_turns {
+        let Session {
+            client,
+            runtime,
+            tools,
+            compaction,
+            ..
+        } = session;
         // Loaded MCP tools join the definitions from the request after loading (H10).
         let definitions = tools.request_definitions(runtime);
         if let Some(policy) = compaction {
@@ -429,11 +436,22 @@ fn run_loop(
                 .as_str()
                 .and_then(|raw| serde_json::from_str(raw).ok())
                 .unwrap_or_else(|| json!({}));
-            runtime.skills.borrow_mut().reconcile(messages);
-            let execution = tools.call_with_id(runtime, id, name, &args, *access, *approval);
-            runtime.skills.borrow().sync_system(messages, meter);
-            log.permissions.push(execution.trace);
-            let result = execution.result;
+            let result = if name == delegate::DELEGATE_TASK && session.tools.delegate().is_some() {
+                delegate_task(session, messages, max_turns, id, &args, log)
+            } else {
+                let Session {
+                    runtime,
+                    tools,
+                    access,
+                    approval,
+                    ..
+                } = session;
+                runtime.skills.borrow_mut().reconcile(messages);
+                let execution = tools.call_with_id(runtime, id, name, &args, *access, *approval);
+                runtime.skills.borrow().sync_system(messages, meter);
+                log.permissions.push(execution.trace);
+                execution.result
+            };
             log.events.push(ToolEvent {
                 seq: log.events.len() as u32 + 1,
                 category: tools::category(name),
@@ -442,14 +460,94 @@ fn run_loop(
                 ok: Some(result.is_ok()),
             });
             let mut content = result.unwrap_or_else(|err| format!("error: {err}"));
-            if compaction.is_some() {
-                content = context::spill(runtime, content);
+            if session.compaction.is_some() {
+                content = context::spill(session.runtime, content);
             }
-            runtime.skills.borrow_mut().delivered(id, &content);
+            session.runtime.skills.borrow_mut().delivered(id, &content);
             messages.push(json!({ "role": "tool", "tool_call_id": id, "content": content }));
         }
     }
     log.termination = Termination::MaxTurns;
+}
+
+/// Runs a `delegate_task` call (H11): a child loop on its own conversation, with the parent's
+/// client, runtime, tools, access level and approval. The child's skill state starts as a copy
+/// of the parent's and the parent's is restored afterwards. Only the child's final answer is
+/// returned; its requests join the run's raw log and usage, and the call is traced.
+fn delegate_task(
+    session: &mut Session,
+    messages: &[Value],
+    max_turns: u32,
+    call_id: &str,
+    args: &Value,
+    log: &mut RunLog,
+) -> Result<String, String> {
+    let mode = session
+        .tools
+        .delegate()
+        .expect("delegate_task is offered only with a mode");
+    let task = args["task"].as_str().unwrap_or_default();
+    let mut trace = json!({
+        "seq": log.delegations.len() + 1,
+        "call_id": call_id,
+        "mode": mode.name(),
+        "depth": session.depth,
+        "task": task,
+    });
+    let result = if session.depth >= 1 {
+        Err(delegate::DEPTH_LIMIT.to_string())
+    } else if task.trim().is_empty() {
+        Err("delegate_task needs a non-empty task".to_string())
+    } else {
+        let mut child_messages = delegate::child_messages(messages, mode, task);
+        trace["child_start_messages"] = json!(child_messages.len());
+        let parent_skills = session.runtime.skills.borrow().clone();
+        let mut child_log = RunLog::new();
+        child_log.agent = Some("child");
+        child_log.turn = log.turn;
+        let mut child = Session {
+            client: session.client,
+            runtime: session.runtime,
+            tools: session.tools,
+            compaction: session.compaction,
+            access: session.access,
+            approval: &mut *session.approval,
+            depth: session.depth + 1,
+        };
+        run_loop(
+            &mut child,
+            &mut child_messages,
+            &mut context::Meter::default(),
+            max_turns,
+            &mut child_log,
+        );
+        *session.runtime.skills.borrow_mut() = parent_skills;
+        log.absorb_child(&child_log);
+        trace["child_requests"] = json!(child_log.requests());
+        trace["child_events"] = json!(child_log.events);
+        trace["child_permissions"] = json!(child_log.permissions);
+        trace["child_delegations"] = json!(child_log.delegations);
+        trace["termination"] = json!(child_log.termination);
+        trace["error"] = json!(child_log.error);
+        match (&child_log.final_output, child_log.termination) {
+            (Some(answer), Termination::Completed) if child_log.error.is_none() => {
+                Ok(answer.clone())
+            }
+            _ => Err(format!(
+                "the subagent ended without a final answer ({})",
+                child_log
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| format!("{:?}", child_log.termination))
+            )),
+        }
+    };
+    trace["result"] = match &result {
+        Ok(answer) => json!({ "ok": answer }),
+        Err(err) => json!({ "error": err }),
+    };
+    log.delegations.push(trace);
+    result
 }
 
 /// A positive token count for `flag`.
@@ -498,6 +596,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut keep_recent = None;
     let mut no_compaction = false;
     let mut tools = None;
+    let mut delegate = None;
     let mut env = true;
     let mut context_file = Some(prompt::DEFAULT_CONTEXT_FILE.to_string());
     let mut context = None;
@@ -518,6 +617,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, String> {
                 let names: Vec<&str> = list.split(',').collect();
                 tools = Some(Toolset::new(&names)?);
             }
+            "--delegate" => delegate = Some(delegate::Mode::parse(&value()?)?),
             "--env" => env = true,
             "--no-env" => env = false,
             "--context-file" => context_file = Some(value()?),
@@ -556,10 +656,13 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, String> {
                 .to_string(),
         );
     }
-    let tools = match tools {
+    let mut tools = match tools {
         Some(tools) => tools,
         None => Toolset::new(tools::DEFAULT)?,
     };
+    if let Some(mode) = delegate {
+        tools = tools.with_delegate(mode);
+    }
     Ok(Args {
         resume,
         management,

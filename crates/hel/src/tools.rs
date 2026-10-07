@@ -30,6 +30,8 @@ pub const DEFAULT: &[&str] = &[BASH];
 pub struct Toolset {
     tools: Vec<Box<dyn Tool>>,
     definitions: Value,
+    /// H11: offers `delegate_task` with this context mode. The loop runs it, not `call_with_id`.
+    delegate: Option<crate::delegate::Mode>,
 }
 
 impl Toolset {
@@ -56,7 +58,21 @@ impl Toolset {
         Ok(Toolset {
             tools: kept.iter().map(|name| builtin(name)).collect(),
             definitions,
+            delegate: None,
         })
+    }
+
+    /// Adds `delegate_task` (H11). Parent and child send the same definitions.
+    pub fn with_delegate(mut self, mode: crate::delegate::Mode) -> Self {
+        if let Some(list) = self.definitions.as_array_mut() {
+            list.push(crate::delegate::definition(mode));
+        }
+        self.delegate = Some(mode);
+        self
+    }
+
+    pub fn delegate(&self) -> Option<crate::delegate::Mode> {
+        self.delegate
     }
 
     /// Tool definitions sent with every request (OpenAI-compatible function tools).

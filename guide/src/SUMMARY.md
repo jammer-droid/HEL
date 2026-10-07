@@ -58,7 +58,8 @@
     - [B — Hooks](labs/h10-skills-hooks-mcp/hooks.md)
     - [C — MCP](labs/h10-skills-hooks-mcp/mcp.md)
     - [FAQ](labs/h10-skills-hooks-mcp/faq.md)
-- [H11 Subagents]()
+- [H11 Subagents](labs/h11-subagents/README.md)
+    - [FAQ](labs/h11-subagents/faq.md)
 - [H12 Parallelism]()
 
 # Part VI — Evaluation

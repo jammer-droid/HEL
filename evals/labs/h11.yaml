@@ -1,0 +1,83 @@
+lab: h11
+title: Sequential delegation and how much parent context the child receives
+revision: 2
+model:
+  provider: deepseek
+  id: deepseek-flash
+  params: {}
+budget:
+  max_turns: 6
+  timeout_seconds: 180
+  max_output_tokens: 8192
+conditions:
+  - name: baseline
+    harness: hel
+    settings:
+      tools: [read_file, search_replace]
+      access: auto
+      env: true
+      context_file: false
+      compaction: false
+  - name: variant-full
+    harness: hel
+    settings:
+      tools: [read_file, search_replace]
+      access: auto
+      env: true
+      context_file: false
+      compaction: false
+      delegate: full
+  - name: variant-no-tools
+    harness: hel
+    settings:
+      tools: [read_file, search_replace]
+      access: auto
+      env: true
+      context_file: false
+      compaction: false
+      delegate: no-tools
+  - name: variant-task-only
+    harness: hel
+    settings:
+      tools: [read_file, search_replace]
+      access: auto
+      env: true
+      context_file: false
+      compaction: false
+      delegate: task-only
+tasks: [delegate-port-handoff-01]
+repetitions: 3
+rubric:
+  source: >
+    Baseline is hel at the h11 tag, before delegation was implemented; run it before modifying
+    crates/hel. It has no delegate_task tool, so the instruction cannot be followed as written.
+    The variants run the implemented delegate_task with one context mode each: full copies the
+    parent conversation so far, no-tools copies system and user messages and earlier final
+    answers without tool calls or results, task-only gives the child only the system prompt and
+    the task. The tool description states what the child receives in that mode.
+    Revision 2 opens the child's last message with a role note (it is a subagent, messages above
+    are the parent's conversation for context only, do only the task, cannot delegate) followed
+    by the task. Revision 1 children given the parent's conversation followed the parent's user
+    message and called delegate_task again in 6/6 runs. Only the variants are rerun; the
+    revision 1 baseline (hel at h11) is unchanged and is not repeated.
+  structure: >
+    The child gets the parent's system prompt, model, tool list, access level and sandbox.
+    Depth is 1: a delegate_task call inside the child is refused with an error result.
+    Only the child's final answer returns to the parent, as the delegate_task tool result.
+  checks: >
+    edited-file and answer are the task result. Delegation use is judged separately from
+    raw/delegations.jsonl and raw/requests.jsonl: the parent called delegate_task once,
+    the child (not the parent) changed deploy/api.yaml, and the parent read the file after the
+    result before answering. A correct file edited by the parent does not count as delegation.
+  observations: >
+    Per run, record the task text the parent wrote (whether it contains 8143, only the source
+    file, or neither), the child's read_file calls on services.ini, the child's first request
+    prompt and cache-hit tokens, the child's total tokens and requests, and the parent's first
+    request after the delegation and its cache-hit tokens.
+  baseline: >
+    Without delegation the parent can only edit the file itself or stop; failing the delegation
+    criterion is the expected starting point regardless of the file checks.
+  budget: >
+    Revision 2 runs the three variants only, nine runs. Revision 1 ran twelve. max_turns applies to the parent loop and to the child loop separately,
+    so at most twelve model requests per run, 8192 output tokens per request, 180 seconds per
+    run; no retries, no compaction calls.

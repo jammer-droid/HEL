@@ -104,7 +104,7 @@ fn build(root: &Path) -> Result<String, Box<dyn Error>> {
 /// with its own defaults: `tools` (a list of tool names) becomes `--tools a,b`; `env: true` /
 /// `false` becomes `--env` / `--no-env`; `context_file: <name>` becomes `--context-file <name>`
 /// and `context_file: false` becomes `--no-context-file`. (From H3 on, hel sends the environment
-/// and `HEL.md` by default.)
+/// and `HEL.md` by default.) `delegate: <mode>` (H11) becomes `--delegate <mode>`.
 fn hel_args(settings: &Value) -> Result<Vec<String>, Box<dyn Error>> {
     let mut args = tool_args(settings)?;
     match settings.get("env") {
@@ -134,6 +134,13 @@ fn hel_args(settings: &Value) -> Result<Vec<String>, Box<dyn Error>> {
             .filter(|v| matches!(*v, "read-only" | "confirm" | "auto"))
             .ok_or("settings.access must be read-only, confirm, or auto")?;
         args.extend(["--access".to_string(), level.to_string()]);
+    }
+    if let Some(mode) = settings.get("delegate") {
+        let mode = mode
+            .as_str()
+            .filter(|v| matches!(*v, "full" | "no-tools" | "task-only"))
+            .ok_or("settings.delegate must be full, no-tools, or task-only")?;
+        args.extend(["--delegate".to_string(), mode.to_string()]);
     }
     if let Some(response) = settings.get("approval_response") {
         if settings.get("access").and_then(Value::as_str) != Some("confirm") {
@@ -472,6 +479,11 @@ mod tests {
             assert!(hel_args(&json!({"access":"confirm", "approval_response":response})).is_ok());
         }
         assert!(hel_args(&json!({})).unwrap().is_empty());
+        assert_eq!(
+            hel_args(&json!({"delegate":"task-only"})).unwrap(),
+            ["--delegate", "task-only"]
+        );
+        assert!(hel_args(&json!({"delegate":"summary"})).is_err());
     }
 
     #[test]
@@ -489,6 +501,11 @@ mod tests {
     #[test]
     fn env_and_context_file_settings_become_flags() {
         assert!(hel_args(&json!({})).unwrap().is_empty());
+        assert_eq!(
+            hel_args(&json!({"delegate":"task-only"})).unwrap(),
+            ["--delegate", "task-only"]
+        );
+        assert!(hel_args(&json!({"delegate":"summary"})).is_err());
         let off = hel_args(&json!({ "env": false, "context_file": false })).unwrap();
         assert_eq!(off, ["--no-env", "--no-context-file"]);
         let args = hel_args(&json!({ "env": true, "context_file": "HEL.md" })).unwrap();

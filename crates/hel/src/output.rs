@@ -32,6 +32,10 @@ pub struct RunLog {
     pub permissions: Vec<crate::permissions::Trace>,
     /// Session turn (1-based) written next to each raw entry; `None` outside session runs.
     pub turn: Option<u32>,
+    /// `"child"` for a subagent's log (H11), written next to each raw entry.
+    pub agent: Option<&'static str>,
+    /// One entry per `delegate_task` call (H11), written to `raw/delegations.jsonl`.
+    pub delegations: Vec<Value>,
     pub final_output: Option<String>,
     pub termination: Termination,
     pub error: Option<String>,
@@ -51,6 +55,8 @@ impl RunLog {
             events: Vec::new(),
             permissions: Vec::new(),
             turn: None,
+            agent: None,
+            delegations: Vec::new(),
             final_output: None,
             termination: Termination::Completed,
             error: None,
@@ -78,9 +84,7 @@ impl RunLog {
             "request": exchange.request,
             "response": exchange.response_json,
         });
-        if let Some(turn) = self.turn {
-            entry["turn"] = json!(turn);
-        }
+        self.tag(&mut entry);
         self.raw.push(entry);
     }
 
@@ -104,9 +108,7 @@ impl RunLog {
             "request": exchange.request,
             "response": exchange.response_json,
         });
-        if let Some(turn) = self.turn {
-            entry["turn"] = json!(turn);
-        }
+        self.tag(&mut entry);
         self.raw.push(entry);
     }
 
@@ -115,10 +117,42 @@ impl RunLog {
         self.model_calls += 1;
         self.usage_complete = false;
         let mut entry = json!({ "purpose": purpose, "error": error });
+        self.tag(&mut entry);
+        self.raw.push(entry);
+    }
+
+    fn tag(&self, entry: &mut Value) {
         if let Some(turn) = self.turn {
             entry["turn"] = json!(turn);
         }
-        self.raw.push(entry);
+        if let Some(agent) = self.agent {
+            entry["agent"] = json!(agent);
+        }
+    }
+
+    /// Adds a finished child's requests to this run (H11): its tokens, calls and cache hits count
+    /// toward the run's cost, its raw entries keep their `"agent": "child"` tag, and its context
+    /// sizes and tool events stay out of the parent's conversation measures.
+    pub fn absorb_child(&mut self, child: &RunLog) {
+        self.input_tokens += child.input_tokens;
+        self.output_tokens += child.output_tokens;
+        self.usage_complete &= child.usage_complete;
+        self.model_calls += child.model_calls;
+        let child_hits: Option<u64> = child.contexts.iter().map(|c| c.cache_hit).sum();
+        self.aux_cache_hits = self
+            .aux_cache_hits
+            .zip(child_hits)
+            .zip(child.aux_cache_hits)
+            .map(|((a, b), c)| a + b + c);
+        self.raw.extend(child.raw.iter().cloned());
+    }
+
+    /// Prompt and cache-hit tokens of each successful call, for the delegation trace.
+    pub fn requests(&self) -> Vec<Value> {
+        self.contexts
+            .iter()
+            .map(|c| json!({ "prompt_tokens": c.tokens, "cache_hit_tokens": c.cache_hit }))
+            .collect()
     }
 
     /// Why the last compaction result was not used, attached to its raw entry.
@@ -138,9 +172,7 @@ impl RunLog {
         };
         self.error = Some(err.to_string());
         let mut entry = json!({ "error": err.to_string() });
-        if let Some(turn) = self.turn {
-            entry["turn"] = json!(turn);
-        }
+        self.tag(&mut entry);
         self.raw.push(entry);
     }
 
@@ -176,6 +208,12 @@ impl RunLog {
             let mut value = serde_json::to_value(entry)?;
             value["seq"] = json!(index + 1);
             writeln!(permissions, "{}", serde_json::to_string(&value)?)?;
+        }
+        if !self.delegations.is_empty() {
+            let mut delegations = fs::File::create(run_dir.join("raw/delegations.jsonl"))?;
+            for entry in &self.delegations {
+                writeln!(delegations, "{}", serde_json::to_string(entry)?)?;
+            }
         }
         let record = self.to_record(ctx, started, ended, wall_time_ms);
         fs::write(record_path, serde_json::to_string_pretty(&record)? + "\n")?;

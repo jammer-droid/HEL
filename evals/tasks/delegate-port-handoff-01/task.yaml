@@ -1,0 +1,17 @@
+id: delegate-port-handoff-01
+eval_version: eval-v12
+description: Read a value, delegate an edit that needs it to a subagent, then verify and report.
+instruction: >
+  services.ini를 읽어 api 서비스의 port를 확인해.
+  그다음 deploy/api.yaml의 port를 그 값으로 바꾸는 작업을 delegate_task로 subagent에게 맡겨.
+  subagent의 결과를 받은 뒤 deploy/api.yaml을 직접 읽어 바뀐 줄을 확인하고,
+  최종 답에는 바뀐 port 값만 숫자로 써.
+fixture: fixture/
+checks:
+  - id: edited-file
+    type: file_exact_match
+    path: deploy/api.yaml
+    expected_file: expected/api.yaml
+  - id: answer
+    type: output_exact_match
+    expected_file: expected/answer.txt

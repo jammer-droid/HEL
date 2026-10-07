@@ -1,0 +1,7 @@
+name: api
+image: registry.local/api:1.4.2
+replicas: 2
+port: 7000
+health:
+  path: /healthz
+  interval: 10s
