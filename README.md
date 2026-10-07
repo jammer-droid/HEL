@@ -42,7 +42,7 @@ harness 구현은 바이브 코딩으로 진행한다. 코드를 작성하는 �
 | [`h11`](https://github.com/jammer-droid/HEL/tree/h11) | H10 완료 상태. Skills 목록·Hooks·지연 로딩 MCP tool |
 | [`h12`](https://github.com/jammer-droid/HEL/tree/h12) | H11 완료 상태. `delegate_task`로 subagent에게 순차 위임(`--delegate full\|no-tools\|task-only`) |
 | [`h13`](https://github.com/jammer-droid/HEL/tree/h13) | H12 완료 상태. 읽기 전용 tool과 subagent 동시 실행(`--parallel`) |
-| `h14` *(예정)* | H13 완료 상태 |
+| [`h14`](https://github.com/jammer-droid/HEL/tree/h14) | H13 완료 상태. tool 호출의 exit code·실패 결과 기록, `evals`의 실패 종류 판정과 pass@k·pass^k |
 
 ```bash
 git clone https://github.com/jammer-droid/HEL.git

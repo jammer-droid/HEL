@@ -65,7 +65,9 @@
 
 # Part VI — Evaluation
 
-- [H13 Harness Evaluation]()
+- [Part VI 개요](parts/part6-evaluation.md)
+- [H13 Harness Evaluation](labs/h13-harness-evaluation/README.md)
+    - [FAQ](labs/h13-harness-evaluation/faq.md)
 
 # Appendix
 

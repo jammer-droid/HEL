@@ -1,5 +1,12 @@
 # Record Schema Changelog
 
+## record-v0 호환 확장 (eval-v14, H13, 2026-10-07)
+
+- `events[]`에 선택 필드 `exit_code`(integer), `error`(string)를 추가한다. H13에서 실패한 tool 호출의 종류를 `evals`가 판정하기 위해서다. 지금까지 `ok` 하나에 의도한 비 0 exit(`diff` exit 1), 명령 실패, 없는 경로, 정책 차단, 실행 환경 오류가 섞여 있었다.
+- 선택 필드라 기존 record는 그대로 유효하다. 읽을 때 없으면 `None`(`record` crate의 serde default), 쓸 때 값이 없으면 생략한다. `schema_version`은 `record-v0` 유지.
+- 과거 record는 재생성하지 않는다. `evals`가 raw/requests.jsonl의 tool 메시지에서 같은 값을 추출해 판정한다(H13). 위임 자식의 호출은 raw에서 부모 호출과 순서를 맞출 수 없어 추출하지 않는다.
+- availability: hel은 둘 다 measured. claude-code는 unavailable.
+
 ## record-v0 유지 (eval-v8, H9, 2026-10-05)
 
 - 프로세스 재시작 task도 두 지시를 합쳐 run 하나로 수집. 새 필드·필드 의미 변경 없음, schema 변경 없음. stage 원본을 보존하고 합계·최댓값은 derived, 전체 시간은 measured로 기록. 계산법은 availability.md. collector 적합성 test에서 기존 schema로 검증.

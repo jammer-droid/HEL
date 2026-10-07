@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="564" viewBox="0 0 1040 564" role="img" aria-labelledby="title desc">
+<title id="title">agent 평가의 실행 흐름</title>
+<desc id="desc">evaluation suite의 task를 evaluation harness가 받아 trial을 k번 실행한다. trial은 깨끗한 평가 환경에서 시작하고 agent harness와 model이 tool로 평가 환경을 바꾼다. trial이 끝나면 transcript와 outcome이 남고, grader가 이를 채점해 trial 점수를 낸다. 점수는 pass@k, pass^k와 token, 시간, 비용으로 집계되어 capability eval과 regression eval에 쓰인다. 사람이 transcript와 판정을 읽고 task와 grader를 고친다.</desc>
+<defs>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#5b6873"/></marker>
+<marker id="ad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c07a2c"/></marker>
+</defs>
+<style>text{font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;fill:#26323b;font-size:14px}
+.h{font-size:16px;font-weight:600}.n{font-size:15px;font-weight:600}.s{font-size:12.5px;fill:#52616c}
+.panel{fill:#f4f6f7;stroke:#c9d1d6}.box{fill:#ffffff;stroke:#7b8790;stroke-width:1.2}.card{fill:#ffffff;stroke:#a9b4bc}
+.trial{fill:#eef4fb;stroke:#7d9cc0;stroke-width:1.2}.out{fill:#fff7e6;stroke:#d5ab66;stroke-width:1.2}
+.grade{fill:#e9f5ec;stroke:#5fa877;stroke-width:1.2}.use{fill:#ffffff;stroke:#5b6873;stroke-width:1.2}
+.read{fill:#fdf2e6;stroke:#c07a2c;stroke-width:1.2;stroke-dasharray:5 3}
+.ln{fill:none;stroke:#5b6873;stroke-width:1.4}.dl{fill:none;stroke:#c07a2c;stroke-width:1.4;stroke-dasharray:5 3}</style>
+<rect width="1040" height="564" rx="12" fill="#ffffff"/>
+
+<!-- ① suite -->
+<text x="16" y="44" class="h">① evaluation suite</text>
+<rect x="28" y="72" width="170" height="240" rx="8" class="card"/>
+<rect x="22" y="66" width="170" height="240" rx="8" class="card"/>
+<rect x="16" y="60" width="170" height="240" rx="8" class="box"/>
+<text x="32" y="90" class="n">task</text>
+<text x="32" y="122" class="s">지시와 성공 기준</text>
+<text x="32" y="148" class="s">평가 환경</text>
+<text x="32" y="174" class="s">grader와 assertion</text>
+<text x="32" y="200" class="s">참조 해법</text>
+<text x="32" y="246" class="s">같은 목표의 task를</text>
+<text x="32" y="266" class="s">묶은 것이 suite</text>
+
+<!-- ② harness -->
+<rect x="220" y="28" width="620" height="518" rx="10" class="panel"/>
+<text x="236" y="54" class="h">② evaluation harness</text>
+<text x="236" y="74" class="s">trial 실행 · 기록 · 채점 · 집계</text>
+<path d="M186 180H236" class="ln" marker-end="url(#a)"/>
+
+<!-- ③ trial stack -->
+<rect x="252" y="100" width="380" height="270" rx="8" class="trial" opacity="0.5"/>
+<rect x="246" y="94" width="380" height="270" rx="8" class="trial" opacity="0.75"/>
+<rect x="240" y="88" width="380" height="270" rx="8" class="trial"/>
+<text x="256" y="114" class="n">③ trial × k</text>
+<text x="256" y="134" class="s">trial마다 깨끗한 평가 환경에서 시작</text>
+<rect x="256" y="160" width="110" height="64" rx="6" class="box"/>
+<text x="311" y="198" text-anchor="middle" class="n">model</text>
+<rect x="420" y="160" width="184" height="64" rx="6" class="box"/>
+<text x="512" y="187" text-anchor="middle" class="n">agent harness</text>
+<text x="512" y="208" text-anchor="middle" class="s">loop · tool 실행</text>
+<path d="M366 182H418" class="ln" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="393" y="204" text-anchor="middle" class="s">입력·응답</text>
+<rect x="420" y="276" width="184" height="64" rx="6" class="box"/>
+<text x="512" y="303" text-anchor="middle" class="n">평가 환경</text>
+<text x="512" y="324" text-anchor="middle" class="s">파일 · 명령 · 상태</text>
+<path d="M512 224V274" class="ln" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="520" y="254" class="s">tool 호출·결과</text>
+
+<!-- ④ outputs -->
+<path d="M330 358V390" class="ln" marker-end="url(#a)"/>
+<path d="M560 340V390" class="ln" marker-end="url(#a)"/>
+<rect x="240" y="392" width="180" height="92" rx="6" class="out"/>
+<text x="256" y="416" class="n">④ transcript</text>
+<text x="256" y="440" class="s">메시지 · tool 호출 · 추론</text>
+<text x="256" y="460" class="s">중간 결과 · token · 시간</text>
+<rect x="440" y="392" width="180" height="92" rx="6" class="out"/>
+<text x="456" y="416" class="n">④ outcome</text>
+<text x="456" y="440" class="s">trial이 끝난 뒤</text>
+<text x="456" y="460" class="s">평가 평가 환경의 최종 상태</text>
+
+<!-- ⑤ graders -->
+<rect x="650" y="260" width="174" height="226" rx="8" class="grade"/>
+<text x="664" y="284" class="n">⑤ grader</text>
+<rect x="662" y="296" width="150" height="54" rx="6" class="box"/>
+<text x="674" y="318" class="n">code</text>
+<text x="674" y="338" class="s">test · 문자열 · 상태</text>
+<rect x="662" y="356" width="150" height="54" rx="6" class="box"/>
+<text x="674" y="378" class="n">model</text>
+<text x="674" y="398" class="s">rubric 판정</text>
+<rect x="662" y="416" width="150" height="54" rx="6" class="box"/>
+<text x="674" y="438" class="n">사람</text>
+<text x="674" y="458" class="s">전문가 검토 · 표본</text>
+<path d="M620 438H648" class="ln" marker-end="url(#a)"/>
+<path d="M330 484V520H636V476H648" class="ln" marker-end="url(#a)"/>
+
+<!-- score & aggregate -->
+<rect x="650" y="172" width="174" height="60" rx="6" class="box"/>
+<text x="664" y="196" class="n">trial 점수</text>
+<text x="664" y="218" class="s">통과·실패 · 부분 점수</text>
+<path d="M737 260V234" class="ln" marker-end="url(#a)"/>
+<rect x="650" y="40" width="174" height="108" rx="6" class="box"/>
+<text x="664" y="64" class="n">⑥ 집계</text>
+<text x="664" y="88" class="s">task별 pass@k · pass^k</text>
+<text x="664" y="110" class="s">통과율</text>
+<text x="664" y="132" class="s">token · 시간 · 비용 · 오류율</text>
+<path d="M737 172V150" class="ln" marker-end="url(#a)"/>
+
+<!-- ⑦ uses -->
+<path d="M824 94H862" class="ln" marker-end="url(#a)"/>
+<rect x="864" y="40" width="160" height="140" rx="8" class="use"/>
+<text x="878" y="64" class="n">⑦ 결과의 쓰임</text>
+<text x="878" y="92" class="s">capability eval</text>
+<text x="878" y="112" class="s">낮은 통과율에서 올리기</text>
+<text x="878" y="142" class="s">regression eval</text>
+<text x="878" y="162" class="s">거의 100% 유지</text>
+
+<!-- ⑧ read transcripts -->
+<rect x="16" y="380" width="180" height="128" rx="8" class="read"/>
+<text x="30" y="404" class="n">⑧ transcript 읽기</text>
+<text x="30" y="430" class="s">agent가 실제로 틀렸는가</text>
+<text x="30" y="452" class="s">grader가 올바른 해법을</text>
+<text x="30" y="474" class="s">떨어뜨렸는가</text>
+<path d="M238 438H198" class="dl" marker-end="url(#ad)"/>
+<path d="M100 380V304" class="dl" marker-end="url(#ad)"/>
+<text x="108" y="346" class="s">task · grader 수정</text>
+</svg>

@@ -407,6 +407,25 @@ fn canonical(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn schema_accepts_tool_events_with_and_without_h13_failure_fields() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let validator = validator(&root).unwrap();
+        let mut record: Value = serde_json::from_str(include_str!(
+            "../../../evals/schema/examples/record-v0.json"
+        ))
+        .unwrap();
+        record["events"] = json!([
+            {"seq": 1, "category": "read", "name": "read_file", "args": {"path": "a"}, "ok": true},
+            {"seq": 2, "category": "exec", "name": "bash", "args": {"command": "diff a b"},
+             "ok": false, "exit_code": 1, "error": "exit=1\n1c1\n"}
+        ]);
+        assert!(validator.is_valid(&record));
+        record["events"][1]["exit_code"] = json!("1");
+        assert!(!validator.is_valid(&record));
+    }
 
     #[test]
     fn fixture_scope_checks_protected_snapshot_not_workspace() {

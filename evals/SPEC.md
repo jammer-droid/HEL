@@ -241,6 +241,7 @@ reasoning/effort 수준, 허용한 tool 목록, system prompt 수정 여부를 L
 | `evals try <task> [--lab] [--harness \| --condition] [--instruction] [--fixture] [--build]` | task 하나를 1회 실행하고 입력, tool 호출, 출력, check, usage를 터미널에 보여준다 | 1회 | `results/try/` |
 | `evals run [lab] [--conditions a,b] [--force] [--build]` | condition × task × repetition 실행 후 판정, report | 있음 | `results/<lab>/<run-id>/`, `report.md` |
 | `evals report [lab]` | 이미 있는 run을 다시 형식 검사, 판정하고 report를 쓴다 | 없음 | `report.md`, run별 `verdict.json` |
+| `evals failures [lab] [--labels <tsv>]` | 저장된 run(생략하면 `results/` 전체)의 실패한 tool 호출을 한 줄씩 종류와 함께 출력한다. `--labels`이면 사람이 분류한 종류(`run_id`, `agent`, `seq`, `kind` TSV)와 비교한 일치율을 출력한다 (eval-v14) | 없음 | 터미널 |
 
 `try`의 기본값:
 
@@ -263,6 +264,7 @@ reasoning/effort 수준, 허용한 tool 목록, system prompt 수정 여부를 L
 
 - 채점 기준(Lab 정의의 `rubric`)
 - condition × task별 runs, valid, pass, check별 통과 수, 평균 token, model 호출 수, wall time. `*`는 derived 값
+- condition × task별 pass@k · pass^k(k = 유효 run 수, 한 번 이상 통과 / 모두 통과)와 실패한 tool 호출의 종류별 수(eval-v14)
 - run별 결과. 실패하거나 무효인 run은 이유를 함께 쓴다. `output_exact_match` 실패는 처음 다른 줄을 보여주고, 공백은 `·`, 탭은 `→`로 표시한다
 
 ---
@@ -336,3 +338,10 @@ H8의 두 조건은 같은 access=auto와 compaction 설정을 사용한다. 기
 - 실행 시간은 기존 `usage.wall_time_ms`로 비교한다. 자식이 실제로 겹쳐 실행됐는지는 hel 진단 로그 `raw/delegations.jsonl`의 자식 시작·종료 시각으로 확인한다(hel 구현 쪽 변경). 응답당 tool 호출 수는 `raw/requests.jsonl`에서 센다.
 - record-v0·verdict-v0 필드와 의미는 변경하지 않는다. 기존 Lab의 정의·결과·실행 경로는 바뀌지 않는다.
 
+### H13 실패 분류와 일관성 지표 (eval-v14)
+
+- record-v0 호환 확장: `events[].exit_code`, `events[].error`(선택). hel은 bash exit code와 실패한 호출의 결과를 기록한다. 자식 호출도 `raw/delegations.jsonl`의 `child_events`에 같은 필드로 남는다. 과거 record는 재생성하지 않는다.
+- 실패 종류 판정은 `evals`가 한다(`crates/evals/src/failures.rs`): `intended-exit`(exit 1이 답인 `diff`·`cmp`·`grep`·`rg`·`test`가 마지막 명령), `command`, `path`(없는 경로·일반 파일 아님·상대 경로 아님), `policy`(permission 거부, hook 차단, 작업 폴더 밖, 위임 깊이), `environment`(harness가 쓰는 프로그램 없음). 실패 종류는 run의 pass/fail 판정에 쓰지 않는다.
+- 과거 record는 `raw/requests.jsonl`의 부모 요청에서 tool 호출을 순서대로 모아 이름·인자가 같은 event에 결과를 붙인다. 자식 호출과, max_turns로 끝나 결과가 요청에 남지 않은 호출은 판정하지 않는다(`?`).
+- report Summary에 `pass@k · pass^k`, `failed calls` 열을 추가한다. Runs 절의 실패한 tool 호출에 종류와 결과 첫 줄을 붙이고, 자식의 실패 호출을 따로 적는다.
+- task·check·verdict 형식은 변경하지 않는다. 기존 Lab의 판정은 바뀌지 않는다.

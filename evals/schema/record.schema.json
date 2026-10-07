@@ -112,7 +112,9 @@
         "category": { "enum": ["read", "search", "edit", "exec", "other"] },
         "name": { "type": "string", "minLength": 1 },
         "args": { "type": "object" },
-        "ok": { "type": ["boolean", "null"] }
+        "ok": { "type": ["boolean", "null"] },
+        "exit_code": { "type": "integer" },
+        "error": { "type": "string" }
       }
     }
   }

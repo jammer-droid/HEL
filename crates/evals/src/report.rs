@@ -9,6 +9,7 @@ use std::path::Path;
 use record::{Metric, MetricStatus, Record, ToolEvent};
 
 use crate::check::{Checked, Judged};
+use crate::failures::{self, Kind};
 use crate::spec::Plan;
 
 struct Row {
@@ -25,6 +26,11 @@ struct Row {
     wall: String,
     /// Mean tool calls per run by tool name, e.g. `bash 2.0 · read_file 1.0`.
     tools: String,
+    /// H13: `pass@k · pass^k` over the valid runs, e.g. `1 · 0 (k=4)`.
+    consistency: String,
+    /// H13: failed tool calls of all valid runs (children included) by kind, e.g.
+    /// `path 5 · command 1`. `?` counts calls with nothing to judge.
+    failed: String,
 }
 
 pub fn write(root: &Path, plan: &Plan, checked: &Checked) -> Result<(), Box<dyn Error>> {
@@ -44,7 +50,7 @@ pub fn write(root: &Path, plan: &Plan, checked: &Checked) -> Result<(), Box<dyn 
         return Ok(());
     }
 
-    let rows = rows(judged);
+    let rows = rows(&root.join(&plan.results), judged);
     let check_ids: Vec<String> = rows
         .iter()
         .flat_map(|r| r.checks.keys().cloned())
@@ -64,7 +70,7 @@ pub fn write(root: &Path, plan: &Plan, checked: &Checked) -> Result<(), Box<dyn 
     Ok(())
 }
 
-fn rows(judged: &[Judged]) -> Vec<Row> {
+fn rows(results: &Path, judged: &[Judged]) -> Vec<Row> {
     let mut groups: BTreeMap<(String, String), Vec<&Judged>> = BTreeMap::new();
     for run in judged {
         groups
@@ -113,11 +119,47 @@ fn rows(judged: &[Judged]) -> Vec<Row> {
                 calls: mean_of(|u| &u.model_calls),
                 wall: mean_of(|u| &u.wall_time_ms),
                 tools: tool_means(&records),
+                consistency: consistency(&valid),
+                failed: failed_kinds(results, &valid),
                 condition,
                 task,
             }
         })
         .collect()
+}
+
+/// `pass@k · pass^k (k=<valid runs>)`: 1 when at least one / every valid run passed (H13).
+fn consistency(valid: &[&Judged]) -> String {
+    if valid.is_empty() {
+        return "—".to_string();
+    }
+    let passed = |r: &&Judged| r.verdict.overall == "pass";
+    format!(
+        "{} · {} (k={})",
+        u8::from(valid.iter().any(passed)),
+        u8::from(valid.iter().all(passed)),
+        valid.len()
+    )
+}
+
+/// Failed tool calls of `valid` runs by kind (H13), e.g. `path 5 · command 1 · ? 2`.
+fn failed_kinds(results: &Path, valid: &[&Judged]) -> String {
+    let mut counts: BTreeMap<Option<Kind>, usize> = BTreeMap::new();
+    for run in valid {
+        if let Some(record) = &run.record {
+            for failed in failures::of_run(&results.join(&run.run_id), record) {
+                *counts.entry(failed.kind()).or_default() += 1;
+            }
+        }
+    }
+    if counts.is_empty() {
+        return "none".to_string();
+    }
+    counts
+        .iter()
+        .map(|(kind, count)| format!("{} {count}", kind.map_or("?", Kind::name)))
+        .collect::<Vec<_>>()
+        .join(" · ")
 }
 
 fn check_cell(row: &Row, id: &str) -> String {
@@ -144,7 +186,8 @@ fn print_terminal(plan: &Plan, runs: usize, invalid: usize, rows: &[Row], check_
     header.push("in/out tokens".to_string());
     header.push("cached · peak ctx".to_string());
     header.push("calls".to_string());
-    header.push("tools".to_string());
+    header.push("pass@k · ^k".to_string());
+    header.push("failed calls".to_string());
 
     let mut table = vec![header];
     for row in rows {
@@ -157,7 +200,8 @@ fn print_terminal(plan: &Plan, runs: usize, invalid: usize, rows: &[Row], check_
         line.push(row.tokens.clone());
         line.push(row.context.clone());
         line.push(row.calls.clone());
-        line.push(row.tools.clone());
+        line.push(row.consistency.clone());
+        line.push(row.failed.clone());
         table.push(line);
     }
     let widths: Vec<usize> = (0..table[0].len())
@@ -212,9 +256,9 @@ fn markdown(
     }
     writeln!(
         out,
-        " in/out tokens | cached in · peak context | model calls | wall time (ms) | tool calls |"
+        " in/out tokens | cached in · peak context | model calls | wall time (ms) | tool calls | pass@k · pass^k | failed calls |"
     )?;
-    writeln!(out, "|{}", " --- |".repeat(10 + check_ids.len()))?;
+    writeln!(out, "|{}", " --- |".repeat(12 + check_ids.len()))?;
     for row in rows {
         write!(
             out,
@@ -226,13 +270,18 @@ fn markdown(
         }
         writeln!(
             out,
-            " {} | {} | {} | {} | {} |",
-            row.tokens, row.context, row.calls, row.wall, row.tools
+            " {} | {} | {} | {} | {} | {} | {} |",
+            row.tokens, row.context, row.calls, row.wall, row.tools, row.consistency, row.failed
         )?;
     }
     writeln!(
         out,
-        "\nNumbers are means over valid runs. `*` marks derived values (computed, not measured).\n"
+        "\nNumbers are means over valid runs. `*` marks derived values (computed, not measured). \
+         pass@k is 1 when at least one of the k valid runs passed, pass^k when all of them did. \
+         Failed calls count every tool call that returned an error, delegated children's included, \
+         by kind: intended-exit (a non-zero exit that answers, e.g. diff found a difference), \
+         command, path, policy (refused by the harness), environment (a program the harness needs \
+         is missing); `?` has nothing to judge.\n"
     )?;
 
     let charts = cache_charts(results, judged);
@@ -272,8 +321,22 @@ fn markdown(
             {
                 writeln!(out, "  - {line}")?;
             }
+            let failed = failures::of_run(&results.join(&run.run_id), record);
             for event in &record.events {
-                writeln!(out, "  - tool: {}", describe_event(event))?;
+                let kind = failed
+                    .iter()
+                    .find(|f| f.agent == failures::Agent::Parent && f.seq == event.seq)
+                    .map(failure_label);
+                writeln!(out, "  - tool: {}", describe_event(event, kind.as_deref()))?;
+            }
+            for child in failed.iter().filter(|f| f.agent == failures::Agent::Child) {
+                writeln!(
+                    out,
+                    "  - child tool #{}: `{}` ({})",
+                    child.seq,
+                    child.name,
+                    failure_label(child)
+                )?;
             }
         }
         for check in &run.verdict.checks {
@@ -490,7 +553,26 @@ fn tool_means(records: &[&Record]) -> String {
 }
 
 /// One line per tool call: the name and its main argument (`command` or `path`).
-fn describe_event(event: &ToolEvent) -> String {
+/// `error: <kind>` with the first line of what the call returned (H13).
+fn failure_label(failed: &failures::Failed) -> String {
+    let kind = failed.kind().map_or("?", Kind::name);
+    let first = failed
+        .error
+        .as_deref()
+        .and_then(|e| {
+            e.lines()
+                .find(|l| !l.trim().is_empty() && !l.starts_with("exit="))
+        })
+        .map(|l| l.chars().take(60).collect::<String>().replace('`', "'"));
+    match (failed.exit_code, first) {
+        (Some(code), Some(line)) => format!("error: {kind}, exit {code}, {line}"),
+        (Some(code), None) => format!("error: {kind}, exit {code}"),
+        (None, Some(line)) => format!("error: {kind}, {line}"),
+        (None, None) => format!("error: {kind}"),
+    }
+}
+
+fn describe_event(event: &ToolEvent, failure: Option<&str>) -> String {
     const MAX_CHARS: usize = 80;
     let arg = ["command", "path", "file_path"]
         .iter()
@@ -503,10 +585,10 @@ fn describe_event(event: &ToolEvent) -> String {
     } else {
         arg
     };
-    let failed = if event.ok == Some(false) {
-        " (error)"
-    } else {
-        ""
+    let failed = match (event.ok, failure) {
+        (Some(false), Some(label)) => format!(" ({label})"),
+        (Some(false), None) => " (error)".to_string(),
+        _ => String::new(),
     };
     format!("`{}` `{}`{failed}", event.name, shown.replace('`', "'"))
 }
@@ -524,7 +606,31 @@ mod tests {
             name: name.to_string(),
             args,
             ok,
+            exit_code: None,
+            error: None,
         }
+    }
+
+    #[test]
+    fn consistency_reports_any_and_every_pass_over_valid_runs() {
+        let run = |overall: &str| Judged {
+            record: None,
+            condition: "variant".to_string(),
+            task_id: "t".to_string(),
+            run_id: "r".to_string(),
+            overridden: false,
+            verdict: crate::check::Verdict {
+                schema_version: "verdict-v0".to_string(),
+                run_id: "r".to_string(),
+                checks: Vec::new(),
+                overall: overall.to_string(),
+            },
+        };
+        let (pass, fail) = (run("pass"), run("fail"));
+        assert_eq!(consistency(&[&pass, &fail, &pass]), "1 · 0 (k=3)");
+        assert_eq!(consistency(&[&pass, &pass]), "1 · 1 (k=2)");
+        assert_eq!(consistency(&[&fail]), "0 · 0 (k=1)");
+        assert_eq!(consistency(&[]), "—");
     }
 
     #[test]
@@ -534,16 +640,20 @@ mod tests {
             json!({ "command": "find . -name a.txt" }),
             Some(true),
         );
-        assert_eq!(describe_event(&bash), "`bash` `find . -name a.txt`");
+        assert_eq!(describe_event(&bash, None), "`bash` `find . -name a.txt`");
         let read = event("read_file", json!({ "path": "a.txt" }), Some(false));
-        assert_eq!(describe_event(&read), "`read_file` `a.txt` (error)");
+        assert_eq!(describe_event(&read, None), "`read_file` `a.txt` (error)");
+        assert_eq!(
+            describe_event(&read, Some("error: path, missing")),
+            "`read_file` `a.txt` (error: path, missing)"
+        );
     }
 
     #[test]
     fn shortens_long_multiline_commands() {
         let long = "x".repeat(100);
         let bash = event("bash", json!({ "command": format!("cat a\n{long}") }), None);
-        let shown = describe_event(&bash);
+        let shown = describe_event(&bash, None);
         assert!(shown.contains("cat a ⏎ x"));
         assert!(shown.ends_with("…`"));
     }

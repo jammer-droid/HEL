@@ -1,0 +1,67 @@
+lab: h13
+title: Classifying failed tool calls and reporting consistency across repetitions
+revision: 2
+description: >
+  Run the current hel with its full tool set on three earlier tasks whose runs produced failed
+  tool calls of different kinds, to confirm that new runs record what the evaluation needs to
+  classify each failure. The classification itself and the pass@k / pass^k columns are computed
+  by evals from stored records, so earlier Labs' runs are judged again without new model calls.
+model:
+  provider: deepseek
+  id: deepseek-flash
+  params: {}
+budget:
+  max_turns: 10
+  timeout_seconds: 300
+  max_output_tokens: 8192
+conditions:
+  - name: variant
+    harness: hel
+    settings:
+      tools: [read_file, write_file, search_replace, bash, glob, grep]
+      ripgrep: true
+      access: auto
+      env: true
+      context_file: false
+      compaction: false
+      delegate: task-only
+      parallel: true
+tasks: [env-checksum-01, edit-line-01, parallel-explore-01]
+repetitions: 4
+rubric:
+  source: >
+    variant is hel after this Lab's change: each tool call in the record also carries the facts
+    needed to classify a failure (bash exit code, the kind of tool error). There is no baseline
+    condition. Failures are reproduced from stored runs of earlier Labs, which have run IDs:
+    h02 and h03 runs where diff exited 1 after finding a difference, h03-r2-env-checksum-01 runs
+    where md5sum was not found (exit 127), h07 permission denials, h10 hook blocks, and h12 runs
+    where read_file opened paths that do not exist and glob/grep failed with "program not found: rg".
+  revision: >
+    Revision 2 changes how failures are judged, not how runs are made: rule v1 agreed with the
+    hand classification of stored failures on 70 of 83 calls (84.3%). Rule v2 lets a failed
+    delegate_task take the kind of its child's last failed call, adds "Is a directory" to path
+    errors, and reads the && / || chain of a bash command's last statement and `exit $var`.
+    Failures of the new runs are classified by hand before the rule's kinds are looked at.
+  failure-kinds: >
+    evals classifies every failed tool call into one of five kinds: intended non-zero exit
+    (not a failure: diff found a difference, grep found no match), command failure (unknown
+    command or option, syntax error, a step that failed), missing or invalid path, blocked by
+    harness policy (permission, sandbox, hook), and execution environment error (a program hel
+    depends on is missing). A hand classification of the stored failures is the reference;
+    the rule is judged by agreement with it.
+  checks: >
+    The pass/fail checks are each task's existing checks. Failure kinds are reported, not
+    checked: they do not change a run's verdict.
+  consistency: >
+    The report adds pass@k and pass^k per task, where k is the number of valid repetitions:
+    pass@k is 1 when at least one run passed, pass^k is 1 when every run passed.
+  observations: >
+    Per run, whether every failed tool call (including calls made by delegated children and
+    calls run at the same time) carries an exit code or error kind, and whether the kind evals
+    assigns matches what the transcript shows. Whether the model avoided the failures seen in
+    earlier runs (for example used openssl instead of md5sum), in which case that kind is not
+    exercised by the new runs.
+  budget: >
+    One condition, three tasks, four repetitions: twelve runs. parallel-explore-01 with three
+    children is at most 40 model requests per run; the other two tasks at most 10. 8192 output
+    tokens per request, 300 seconds per run, no retries, no compaction calls.

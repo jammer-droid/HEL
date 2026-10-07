@@ -169,6 +169,12 @@ fn full_copy_continues_the_parent_request_and_returns_the_answer() {
         .map(|e| e["name"].as_str().unwrap())
         .collect();
     assert_eq!(child_tools, ["search_replace", "delegate_task"]);
+    // H13: the child's refused call carries what it returned, like a parent call would.
+    let refused = &trace["child_events"][1];
+    assert_eq!(refused["ok"], false);
+    assert_eq!(refused["error"], crate::delegate::DEPTH_LIMIT);
+    assert!(refused.get("exit_code").is_none());
+    assert!(trace["child_events"][0].get("error").is_none());
     assert_eq!(
         trace["child_delegations"][0]["result"]["error"],
         crate::delegate::DEPTH_LIMIT
@@ -217,4 +223,67 @@ fn task_only_starts_from_the_system_prompt() {
         requests[2]["messages"][1]["content"],
         crate::delegate::child_task("set api.yaml port to 8143")
     );
+}
+
+/// H13: a failed call records what the tool returned; a bash call also records its exit code.
+#[test]
+#[cfg(target_os = "macos")]
+fn failed_calls_record_exit_code_and_error() {
+    let root = project();
+    fs::write(root.join("a.txt"), "one\n").unwrap();
+    fs::write(root.join("b.txt"), "two\n").unwrap();
+    let run_dir = root.join("run");
+    fs::create_dir(&run_dir).unwrap();
+    fs::write(
+        run_dir.join("context.json"),
+        serde_json::to_string(&crate::manual_context()).unwrap(),
+    )
+    .unwrap();
+    let (url, server) = mock_responses(vec![
+        tool_call("b1", "bash", json!({"command": "diff a.txt b.txt"})),
+        tool_call("b2", "bash", json!({"command": "cat a.txt"})),
+        tool_call("r1", "read_file", json!({"path": "missing.txt"})),
+        answer("done"),
+    ]);
+    let context = run_dir.join("context.json");
+    let record = run_dir.join("record.json");
+    successful(
+        child(
+            &root,
+            &[
+                "--tools",
+                "bash,read_file",
+                "--access",
+                "auto",
+                "--no-compaction",
+                "--instruction",
+                "compare",
+                "--context",
+                context.to_str().unwrap(),
+                "--record",
+                record.to_str().unwrap(),
+            ],
+            Some(&url),
+        )
+        .output()
+        .unwrap(),
+    );
+    server.join().unwrap();
+    let record: Value = serde_json::from_str(&fs::read_to_string(record).unwrap()).unwrap();
+    let events = record["events"].as_array().unwrap();
+    assert_eq!(events[0]["ok"], false);
+    assert_eq!(events[0]["exit_code"], 1);
+    let diff = events[0]["error"].as_str().unwrap();
+    assert!(
+        diff.starts_with("exit=1\n") && diff.contains("< one"),
+        "{diff}"
+    );
+    assert_eq!(events[1]["ok"], true);
+    assert_eq!(events[1]["exit_code"], 0);
+    assert!(events[1].get("error").is_none());
+    assert_eq!(events[2]["ok"], false);
+    assert!(events[2].get("exit_code").is_none());
+    let missing = events[2]["error"].as_str().unwrap();
+    assert!(!missing.starts_with("error: "), "{missing}");
+    assert!(missing.contains("No such file or directory"), "{missing}");
 }

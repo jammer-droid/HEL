@@ -88,6 +88,8 @@ H5 확장 필드 세 개는 선택 필드다. 이전 record에는 없으며, 읽
 | `events[].name` | string | v0 | harness의 원래 tool 이름 |
 | `events[].args` | object | v0 | tool 인자. **이유**: `tool_calls` check가 대상 경로를 확인 (H0) |
 | `events[].ok` | boolean \| null | v0 | tool 실행 성공 여부. 알 수 없으면 `null` |
+| `events[].exit_code` | integer, 선택 | v0 확장 (H13) | `bash` 호출의 exit code. 다른 tool, 강제 종료, 실행 전에 harness가 거부한 호출에는 없다. **이유**: exit code가 0이 아니어도 명령이 할 일을 한 경우(`diff`가 차이를 찾음)를 실패와 구분 (H13) |
+| `events[].error` | string, 선택 | v0 확장 (H13) | 실패한 호출이 돌려준 결과. 300자를 넘으면 `bash`는 끝부분(stderr가 stdout 뒤에 붙음), 다른 tool은 앞부분만 두고 `…`를 붙인다. model에게 붙인 `error: ` 접두어는 뺀다. **이유**: `evals`가 실패 종류(의도한 비 0 exit, 명령 실패, 없는·잘못된 경로, harness 정책 차단, 실행 환경 오류)를 판정 (H13) |
 
 ### `validity` — 유효성
 

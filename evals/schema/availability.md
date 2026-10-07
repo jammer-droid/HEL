@@ -1,6 +1,6 @@
 # Field Availability by Harness
 
-> record-v0 기준. 값: `measured` / `derived` / `unavailable` / `?`(아직 확인 안 됨)  
+> record-v0 기준(H13 `events[]` 선택 필드 포함). 값: `measured` / `derived` / `unavailable` / `?`(아직 확인 안 됨)  
 > collector를 만들거나 record 필드를 추가할 때 이 표를 함께 갱신한다.
 
 | 필드 | hel | claude-code |
@@ -17,6 +17,8 @@
 | `usage.last_context_tokens` | measured (마지막 성공 호출의 `prompt_tokens`) | unavailable (같은 이유) |
 | `events` | measured | measured (`tool_use` block) |
 | `events[].ok` | measured | measured (`tool_result.is_error`) |
+| `events[].exit_code` | measured (`bash` 결과 첫 줄 `exit=<code>`) | unavailable (Bash tool 결과에 exit code가 따로 없음) |
+| `events[].error` | measured (실패한 호출의 결과 텍스트, `record::error_excerpt`) | unavailable (미수집) |
 
 ## 메모
 

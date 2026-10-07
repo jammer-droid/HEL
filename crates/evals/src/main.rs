@@ -3,6 +3,7 @@
 //!   evals try <task> [--lab <lab>] [--harness <name> | --condition <name>] [--instruction <text>] [--fixture <dir>]
 //!   evals run [lab] [--conditions a,b] [--force]
 //!   evals report [lab]
+//!   evals failures [lab] [--labels <tsv>]
 //!
 //! Works from any directory inside the HarnessEngineeringLab repository. A Lab is given by its
 //! ID (`h00` → evals/labs/h00.yaml) and defaults to the latest Lab; a task by its ID
@@ -10,6 +11,7 @@
 
 mod check;
 mod claude_code;
+mod failures;
 mod hel;
 mod report;
 mod runner;
@@ -25,6 +27,7 @@ const USAGE: &str = "usage:
   evals try <task> [--lab <lab>] [--harness hel|claude-code | --condition <name>] [--instruction <text>] [--fixture <dir>] [--build]
   evals run [lab] [--conditions a,b] [--force] [--build]
   evals report [lab]
+  evals failures [lab] [--labels <tsv>]
 
 hel: uses the installed `hel` on PATH if present, otherwise builds crates/hel.
 --build always builds and runs the working tree.
@@ -69,6 +72,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             "--condition" => flags.condition = Some(value()?),
             "--instruction" => flags.instruction = Some(value()?),
             "--fixture" => flags.fixture = Some(PathBuf::from(value()?)),
+            "--labels" => flags.labels = Some(PathBuf::from(value()?)),
             other => return Err(format!("unknown argument: {other}\n{USAGE}").into()),
         }
     }
@@ -86,6 +90,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 build: flags.build,
             },
         ),
+        "failures" => failures::list(root, target.as_deref(), flags.labels.as_deref()),
         "run" | "report" | "check" => {
             let plan = spec::load_plan(root, target.as_deref())?;
             let tasks = plan
@@ -118,6 +123,7 @@ struct Flags {
     condition: Option<String>,
     instruction: Option<String>,
     fixture: Option<PathBuf>,
+    labels: Option<PathBuf>,
 }
 
 /// Walks up from the current directory to the repository root (the directory with

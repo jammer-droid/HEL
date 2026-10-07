@@ -604,12 +604,22 @@ fn deliver(
     result: Result<String, String>,
     log: &mut RunLog,
 ) {
+    let text = match &result {
+        Ok(text) | Err(text) => text,
+    };
     log.events.push(ToolEvent {
         seq: log.events.len() as u32 + 1,
         category: tools::category(&call.name),
         name: call.name.clone(),
         args: call.args.clone(),
         ok: Some(result.is_ok()),
+        exit_code: (call.name == tools::BASH)
+            .then(|| record::bash_exit_code(text))
+            .flatten(),
+        error: result
+            .as_ref()
+            .err()
+            .map(|err| record::error_excerpt(&call.name, err)),
     });
     let mut content = result.unwrap_or_else(|err| format!("error: {err}"));
     if session.compaction.is_some() {

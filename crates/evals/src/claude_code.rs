@@ -203,6 +203,8 @@ pub fn collect(job: &RunJob, stream: &str, finished: &Finished) -> Record {
             name: name.clone(),
             args: input.clone(),
             ok: tool_errors.get(id).map(|is_error| !is_error),
+            exit_code: None,
+            error: None,
         })
         .collect();
 
