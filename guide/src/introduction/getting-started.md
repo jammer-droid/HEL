@@ -4,6 +4,7 @@
 
 | 도구 | 용도 | 비고 |
 | --- | --- | --- |
+| macOS | H8부터 bash 등 외부 명령을 macOS sandbox 안에서 실행 | 다른 OS에서는 H8 이후의 `hel`이 외부 명령을 실행하지 않는다 |
 | Rust toolchain (`rustup`, `cargo`) | harness와 측정 도구 빌드 | stable 최신 버전 |
 | git | 소스 받기, Lab checkpoint 이동 | |
 | ripgrep (`rg`, H4부터) | 파일명·본문 검색 tool과 검색 측정 | PATH에서 실행 가능해야 함. `rg --version`으로 확인 |
@@ -73,8 +74,8 @@ git clone https://github.com/jammer-droid/HEL.git
 | [`h02`](https://github.com/jammer-droid/HEL/tree/h02) | H1 완성 상태. `hel`에 bash tool 포함 |
 | [`h03`](https://github.com/jammer-droid/HEL/tree/h03) | H2 완성 상태. `hel`에 편집 tool 포함 |
 | [`h04`](https://github.com/jammer-droid/HEL/tree/h04) | H3 완성 상태. `hel`이 OS·shell·작업 경로와 `HEL.md`를 시스템 프롬프트로 보냄 |
-| [`h05`](https://github.com/jammer-droid/HEL/tree/h05) | H4 완성 상태 |
-| [`h06`](https://github.com/jammer-droid/HEL/tree/h06) | H5 완성 상태 |
+| [`h05`](https://github.com/jammer-droid/HEL/tree/h05) | H4 완성 상태. 파일명·본문 검색 tool `glob`, `grep` |
+| [`h06`](https://github.com/jammer-droid/HEL/tree/h06) | H5 완성 상태. 실행 기록에 cache hit와 요청별 context 크기 |
 | [`h07`](https://github.com/jammer-droid/HEL/tree/h07) | H6 완성 상태. `hel`이 context를 기본으로 압축함 |
 | [`h08`](https://github.com/jammer-droid/HEL/tree/h08) | H7 완성 상태. 접근 레벨과 호출별 승인 |
 | [`h09`](https://github.com/jammer-droid/HEL/tree/h09) | H8 완성 상태. macOS sandbox와 인스턴스별 저장 공간 |
@@ -83,7 +84,6 @@ git clone https://github.com/jammer-droid/HEL.git
 | [`h12`](https://github.com/jammer-droid/HEL/tree/h12) | H11 완성 상태. subagent에게 작업을 순차 위임하는 `delegate_task` |
 | [`h13`](https://github.com/jammer-droid/HEL/tree/h13) | H12 완성 상태. 읽기 전용 tool과 subagent를 동시에 실행하는 `--parallel` |
 | [`h14`](https://github.com/jammer-droid/HEL/tree/h14) | H13 완성 상태. tool 호출의 exit code·실패 결과 기록, `evals failures`와 pass@k·pass^k |
-| `hXX` | H(XX-1) 완성 상태 |
 
 Lab을 시작할 때는 해당 tag에서 branch를 만든다. 예를 들어 H1은 `h01`에서 시작한다.
 
@@ -138,7 +138,7 @@ evals try read-echo-01
 evals try read-echo-01 --instruction "Read hello.txt and print it in uppercase."
 ```
 
-Lab을 마칠 때는 그 Lab의 test set 전체를 실행하고 채점한다. baseline은 Lab을 시작할 때, 코드를 고치기 전에 먼저 실행한다.
+Lab을 마칠 때는 그 Lab의 test set 전체를 실행하고 채점한다. Lab 정의(`evals/labs/<lab>.yaml`)에는 비교할 조건이 있다. `baseline`은 Lab을 시작한 상태의 `hel`, `variant`는 그 Lab에서 고친 `hel`로 실행하는 조건이다. `baseline`은 코드를 고치기 전에 먼저 실행한다.
 
 ```bash
 evals run h00 --conditions baseline
@@ -149,6 +149,12 @@ evals run h00 --conditions variant
 ```
 
 이미 실행한 결과를 다시 채점하고 report만 볼 때는 `evals report h00`을 쓴다. Lab ID를 생략하면 가장 최근 Lab을 쓴다. report는 `results/<lab>/report.md`에 저장된다.
+
+`h14`부터는 실행 중 실패한 tool 호출을 `evals failures`로 모아 볼 수 있다. 호출마다 exit code, 실패 종류, 결과의 일부가 한 줄로 나온다. 이 명령과 실패 종류의 판정 방법은 [H13](../labs/h13-harness-evaluation/)에서 만든다.
+
+```bash
+evals failures h13
+```
 
 ## 이 가이드를 로컬에서 보기
 

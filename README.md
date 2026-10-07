@@ -33,8 +33,8 @@ harness 구현은 바이브 코딩으로 진행한다. 코드를 작성하는 �
 | [`h02`](https://github.com/jammer-droid/HEL/tree/h02) | H1 완료 상태. `hel`에 bash tool, `--tools`로 tool 구성 선택(기본 bash) |
 | [`h03`](https://github.com/jammer-droid/HEL/tree/h03) | H2 완료 상태. `hel`에 `write_file`, `search_replace` tool(`--tools`로 선택) |
 | [`h04`](https://github.com/jammer-droid/HEL/tree/h04) | H3 완료 상태. `hel`이 실행 환경 정보와 작업 디렉터리의 `HEL.md`를 system message로 보냄(`--no-env`, `--no-context-file`로 끔) |
-| [`h05`](https://github.com/jammer-droid/HEL/tree/h05) | H4 완료 상태 |
-| [`h06`](https://github.com/jammer-droid/HEL/tree/h06) | H5 완료 상태 |
+| [`h05`](https://github.com/jammer-droid/HEL/tree/h05) | H4 완료 상태. 파일명·본문 검색 tool `glob`, `grep`(`--tools`로 선택) |
+| [`h06`](https://github.com/jammer-droid/HEL/tree/h06) | H5 완료 상태. 실행 기록에 cache hit와 요청별 context 크기 |
 | [`h07`](https://github.com/jammer-droid/HEL/tree/h07) | H6 완료 상태. `hel`이 context를 기본으로 압축함(`--no-compaction`으로 끔) |
 | [`h08`](https://github.com/jammer-droid/HEL/tree/h08) | H7 완료 상태. 접근 레벨과 호출별 승인 |
 | [`h09`](https://github.com/jammer-droid/HEL/tree/h09) | H8 완료 상태. macOS sandbox와 인스턴스별 저장 공간 |
