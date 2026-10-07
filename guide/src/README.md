@@ -44,12 +44,12 @@ FAQ에는 본문에 넣지 않았지만 이후 Lab과 이어지는 이야기를 
 | | H4 Repository Search | 전용 파일명·본문 검색 tool은 bash 검색의 탐색 비용을 어떻게 바꾸는가? |
 | III. Context | H5 Context Budget | Codex와 DeepSeek Harness는 context budget을 어떻게 측정·배분하고, 한도에 가까워지면 무엇을 남기고 버리는가? |
 | | H6 Compaction | 기존 작업과 같은 환경에서 compaction을 일찍 일으킨 뒤 이어서 작업하면, 작업은 계속되고 호출마다 cache hit는 다시 올라가는가? |
-| IV. Safety and Runtime Reliability | [H7 Permissions](labs/h07-permissions/README.md) · [FAQ](labs/h07-permissions/faq.md) | 접근 레벨에 따라 tool 호출을 어떻게 제어하는가? |
-| | H8 Sandbox | permission과 isolation은 왜 다른 문제인가? |
-| | H9 Sessions & Checkpoints | crash, resume, reproducibility를 어떻게 다룰 것인가? |
-| V. Extensibility and Orchestration | H10 Skills / Hooks / MCP | core loop를 바꾸지 않고 capability를 어떻게 확장할 것인가? |
-| | H11 Subagents | delegation과 context isolation은 언제 이득인가? |
-| | H12 Parallelism | concurrency가 실제로 task completion에 도움이 되는가? |
-| VI. Evaluation | H13 Harness Evaluation | 추가 scaffold가 실제 capability를 얼마나 개선하는가? |
+| IV. Safety and Runtime Reliability | H7 Permissions | 접근 레벨에 따라 tool 호출을 어떻게 제어하는가? |
+| | H8 Sandbox | 허용한 실행의 접근 범위를 어떻게 제한할 것인가? |
+| | H9 Sessions & Checkpoints | 종료한 대화를 어떤 상태에서 다시 시작할 것인가? |
+| V. Extensibility and Orchestration | H10 Skills / Hooks / MCP | 핵심 loop를 계속 고치지 않고 기능을 어떻게 확장할 것인가? |
+| | H11 Subagents | 작업 위임과 별도 문맥은 언제 도움이 되는가? |
+| | H12 Parallelism | 여러 작업을 동시에 실행하면 작업 완료에 도움이 되는가? |
+| VI. Evaluation | H13 Harness Evaluation | harness를 어떤 기준으로 평가하고 개선할 수 있는가? |
 
 Lab의 이름과 순서는 실험을 진행하며 바뀔 수 있다.
